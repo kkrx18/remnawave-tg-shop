@@ -7,7 +7,7 @@
   "channel_subscription_verified_success": "✅ Подписка подтверждена! Можно продолжать.",
   "main_menu_greeting": "Привет, {user_name}! 👋\nЧто бы вы хотели сделать?",
   "menu_activate_trial_button": "🆓 Пробный период",
-  "menu_subscribe_inline": "💲Купить💲",
+  "menu_subscribe_inline": "💵Купить💵",
   "menu_my_subscription_inline": "🔐 Моя подписка",
   "no_subscription_options_available": "Выдача подписки не натроена администратором бота",
   "menu_referral_inline": "🎁 Рефералы",
