@@ -7,7 +7,7 @@
   "channel_subscription_verified_success": "✅ Subscription confirmed! You're good to go.",
   "main_menu_greeting": "Hi, {user_name}! 👋\nWhat would you like to do?",
   "menu_activate_trial_button": "🆓 Free Trial",
-  "menu_subscribe_inline": "🚀 Purchase",
+  "menu_subscribe_inline": "💲Purchase💲",
   "menu_my_subscription_inline": "🔐 My Subscription",
   "no_subscription_options_available": "Subscription issuance is not configured by the bot administrator",
   "menu_referral_inline": "🎁 Referrals",
