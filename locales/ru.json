@@ -417,7 +417,7 @@
   "admin_sync_no_telegram_id": "\n⚠️ Записей без telegramId: {count}",
   "admin_sync_not_found_in_db": "\n❌ Не найдено в БД: {count}",
   "admin_payments_pagination_info": "📊 Показано {shown} из {total} платежей (стр. {current_page}/{total_pages})",
-  "my_subscription_details": "🔐 <b>Моя подписка</b>\n\nБесплатный промокод на 3 дня: FREEPROMO\n\n⏰ Статус: <b>{status}</b>\n📅 Действует до: <b>{end_date}</b>\n📆 Осталось дней: <b>{days_left}</b>\n\n🔗 Ссылка на конфигурацию:\n<code>{config_link}</code>\n\n📊 Трафик:\nЛимит: <b>{traffic_limit}</b>\nИспользовано: <b>{traffic_used}</b>",
+  "my_subscription_details": "🔐 <b>Моя подписка</b>\n\nТвой <b>бесплатный</b> промокод на 3 дня: FREEPROMO\n\n⏰ Статус: <b>{status}</b>\n📅 Действует до: <b>{end_date}</b>\n📆 Осталось дней: <b>{days_left}</b>\n\n🔗 Ссылка на конфигурацию:\n<code>{config_link}</code>\n\n📊 Трафик:\nЛимит: <b>{traffic_limit}</b>\nИспользовано: <b>{traffic_used}</b>",
   "autorenew_enable_button": "🔄 Включить автопродление",
   "autorenew_disable_button": "🛑 Отключить автопродление",
   "subscription_autorenew_updated": "Настройки автопродления обновлены.",
