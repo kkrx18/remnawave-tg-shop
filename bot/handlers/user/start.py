@@ -27,9 +27,7 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
-
-async def send_main_menu(target_event: Union[types.Message,
-                                             types.CallbackQuery],
+async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
                          settings: Settings,
                          i18n_data: dict,
                          subscription_service: SubscriptionService,
@@ -38,56 +36,78 @@ async def send_main_menu(target_event: Union[types.Message,
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
 
-    user_id = target_event.from_user.id
-    user_full_name = hd.quote(target_event.from_user.full_name)
-
     if not i18n:
-        logging.error(f"i18n_instance missing in send_main_menu for user {user_id}")
-        err_msg_fallback = "Error: Language service unavailable. Please try again later."
-        
+        logging.error("i18n_instance missing in send_main_menu")
+        err_msg_fallback = "Ошибка: служба языка недоступна. Попробуйте позже."
         if isinstance(target_event, types.CallbackQuery):
             try:
                 await target_event.answer(err_msg_fallback, show_alert=True)
             except Exception:
-                pass  # Если произошла ошибка при ответе, просто пропускаем её
-        elif isinstance(target_event, types.Message):
+                pass
+        else:
             try:
                 await target_event.answer(err_msg_fallback)
             except Exception:
-                pass  # Если ошибка при ответе в сообщении, тоже пропускаем её
+                pass
         return
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # URL изображения для главного меню
-    image_url = "https://cond.kaivpn.ru/img/kaivpnlogo.png"  # Вставь свою ссылку
+    # Текст и image_url из i18n (проверьте, что вы добавили main_menu_image в locales)
+    user_full_name = ""
+    if isinstance(target_event, types.CallbackQuery):
+        user_full_name = hd.quote(target_event.from_user.full_name)
+    else:
+        user_full_name = hd.quote(target_event.from_user.full_name)
 
-    try:
-        # Проверка URL: если это не правильный тип URL, выводим ошибку
-        if not image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-            raise ValueError("Неверный тип URL, ожидается прямая ссылка на изображение.")
-
-        # Отправляем изображение
-        await target_event.answer_photo(image_url)
-    except TelegramBadRequest as e:
-        logging.error(f"Ошибка при отправке изображения: {e}")
-        pass  # Если не удалось отправить изображение, просто пропускаем
-    except ValueError as e:
-        logging.error(f"Ошибка URL изображения: {e}")
-        pass  # Ошибка с URL изображения, логируем и пропускаем
-
-    # Текст для главного меню
     text = _(key="main_menu_greeting", user_name=user_full_name)
+
+    # Получаем image_url из i18n (если нет — используем дефолт из настроек или пустую строку)
+    try:
+        image_url = i18n.gettext(current_lang, "main_menu_image")
+    except Exception:
+        image_url = getattr(settings, "MAIN_MENU_IMAGE", "https://cond.kaivpn.ru/img/kaivpnlogo.png")
+
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
 
+    # Определяем chat_id и bot
+    if isinstance(target_event, types.CallbackQuery):
+        if not target_event.message:
+            logging.error("CallbackQuery.message missing")
+            return
+        chat_id = target_event.message.chat.id
+    else:
+        chat_id = target_event.chat.id
+
+    bot = target_event.bot
+
+    # Попытка отправить фото с подписью + клавиатурой (лучше — одно сообщение)
+    if image_url and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+        try:
+            await bot.send_photo(chat_id=chat_id, photo=image_url, caption=text, reply_markup=reply_markup)
+            # Если это callback и нужно закрыть "часики" — ответим на callback
+            if isinstance(target_event, types.CallbackQuery):
+                try:
+                    await target_event.answer()  # убирает загрузку у кнопки
+                except Exception:
+                    pass
+            return
+        except TelegramBadRequest as e:
+            logging.warning(f"send_photo failed, fallback to send message. Error: {e}")
+
+    # Фолбек — если не удалось отправить фото или image_url некорректен — отправляем обычный текст (без URL)
     try:
-        # Отправляем текст и клавиатуру
-        await target_event.answer(text, reply_markup=reply_markup)
+        # Убедимся, что текст не содержит ссылку (если содержит — можно заменить/очистить)
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        if isinstance(target_event, types.CallbackQuery):
+            try:
+                await target_event.answer()
+            except Exception:
+                pass
     except TelegramBadRequest as e:
-        logging.error(f"Ошибка при отправке текста: {e}")
-        pass  # Если не удалось отправить текст, также пропускаем ошибку
-
-
+        logging.error(f"Ошибка при отправке текста главного меню: {e}")
+        # молча выходим
+        return
 
 async def ensure_required_channel_subscription(
         event: Union[types.Message, types.CallbackQuery],
