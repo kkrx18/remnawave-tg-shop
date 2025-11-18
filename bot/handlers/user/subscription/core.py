@@ -138,6 +138,7 @@ async def my_subscription_command_handler(
 
     text = get_text(
         "my_subscription_details",
+        "promoinmysubdetails",
         end_date=end_date.strftime("%Y-%m-%d") if end_date else "N/A",
         days_left=max(0, days_left),
         status=active.get("status_from_panel", get_text("status_active")).capitalize(),
