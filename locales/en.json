@@ -285,7 +285,7 @@
   "admin_user_message_sent_error": "❌ Error sending message",
   "admin_user_no_logs": "📜 User has no actions",
   "admin_user_logs_error": "❌ Error loading user actions",
-  "admin_direct_message_signature": "\n\n---\n💬 Message from administrator",
+  "admin_direct_message_signature": "\n___\n\n💬 Message from <b>ADMINISTRATOR</b>",
   "inline_user_stats_message": "👥 <b>User Statistics</b>\n\n📊 Total: <b>{total}</b>\n📈 Active today: <b>{active_today}</b>\n💳 With paid subscription: <b>{paid}</b>\n🆓 On trial period: <b>{trial}</b>\n😴 Inactive: <b>{inactive}</b>\n🚫 Banned: <b>{banned}</b>\n🎁 Via referral program: <b>{referral}</b>",
   "inline_user_stats_description": "Total: {total}, Paid: {active}",
   "inline_admin_user_stats_title": "👥 User Statistics",
