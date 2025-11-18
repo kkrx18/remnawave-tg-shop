@@ -8,6 +8,7 @@ from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
+from pathlib import Path
 
 from db.dal import user_dal
 from db.models import User
@@ -53,21 +54,13 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Текст и image_url из i18n (проверьте, что вы добавили main_menu_image в locales)
-    user_full_name = ""
-    if isinstance(target_event, types.CallbackQuery):
-        user_full_name = hd.quote(target_event.from_user.full_name)
-    else:
-        user_full_name = hd.quote(target_event.from_user.full_name)
+    # Имя пользователя (экранируем)
+    user_full_name = hd.quote(target_event.from_user.full_name)
 
+    # Текст для подписи (locales)
     text = _(key="main_menu_greeting", user_name=user_full_name)
 
-    # Получаем image_url из i18n (если нет — используем дефолт из настроек или пустую строку)
-    try:
-        image_url = i18n.gettext(current_lang, "main_menu_image")
-    except Exception:
-        image_url = getattr(settings, "MAIN_MENU_IMAGE", "https://cond.kaivpn.ru/img/kaivpnlogo.png")
-
+    # reply_markup
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
 
     # Определяем chat_id и bot
@@ -81,24 +74,67 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     bot = target_event.bot
 
-    # Попытка отправить фото с подписью + клавиатурой (лучше — одно сообщение)
-    if image_url and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+    # Попытка найти локальный файл: рассчитываем путь relative к этому файлу (start.py)
+    try:
+        this_file = Path(__file__).resolve()
+        # start.py -> .../user/ -> handlers/ -> bot/
+        bot_dir = this_file.parent.parent.parent  # ../.. up to bot
+        static_dir = bot_dir / STATIC_DIR_NAME
+        local_image_path = static_dir / STATIC_IMAGE_NAME
+    except Exception as e:
+        logging.exception(f"Не удалось вычислить путь к static: {e}")
+        local_image_path = None
+
+    # 1) Если локальный файл найден — отправляем его (гарантированный бинарный upload)
+    if local_image_path and local_image_path.exists():
         try:
-            await bot.send_photo(chat_id=chat_id, photo=image_url, caption=text, reply_markup=reply_markup)
-            # Если это callback и нужно закрыть "часики" — ответим на callback
+            logging.info(f"Sending local image: {local_image_path}")
+            # Открываем файл в бинарном режиме и отправляем
+            with open(local_image_path, "rb") as photo_file:
+                await bot.send_photo(chat_id=chat_id, photo=photo_file, caption=text, reply_markup=reply_markup)
             if isinstance(target_event, types.CallbackQuery):
                 try:
-                    await target_event.answer()  # убирает загрузку у кнопки
+                    await target_event.answer()
                 except Exception:
                     pass
             return
         except TelegramBadRequest as e:
-            logging.warning(f"send_photo failed, fallback to send message. Error: {e}")
+            logging.warning(f"send_photo(local) failed, fallback to URL/message. Error: {e}")
+        except Exception as e:
+            logging.exception(f"Ошибка при отправке локального фото: {e}")
 
-    # Фолбек — если не удалось отправить фото или image_url некорректен — отправляем обычный текст (без URL)
+    # 2) Если локального файла нет или он не отправился — пробуем image_url из i18n (если есть)
+    image_url = None
     try:
-        # Убедимся, что текст не содержит ссылку (если содержит — можно заменить/очистить)
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        image_url = i18n.gettext(current_lang, "main_menu_image")
+    except Exception:
+        image_url = getattr(settings, "MAIN_MENU_IMAGE", None)
+
+    if image_url:
+        # Только если похоже на картинку — попытаться отправить по URL
+        if isinstance(image_url, str) and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+            try:
+                logging.info(f"Sending image by URL: {image_url}")
+                await bot.send_photo(chat_id=chat_id, photo=image_url, caption=text, reply_markup=reply_markup)
+                if isinstance(target_event, types.CallbackQuery):
+                    try:
+                        await target_event.answer()
+                    except Exception:
+                        pass
+                return
+            except TelegramBadRequest as e:
+                logging.warning(f"send_photo(URL) failed, fallback to send message. Error: {e}")
+            except Exception as e:
+                logging.exception(f"Ошибка при отправке фото по URL: {e}")
+        else:
+            logging.warning("image_url не похож на прямую ссылку на изображение или отсутствует.")
+
+    # 3) Финальный фолбэк — отправляем обычный текст (без ссылок)
+    try:
+        # Если в тексте случайно осталась ссылка на картинку (в старом ru.json), лучше очистить.
+        safe_text = text
+        # Простой способ убрать явные http ссылки (если нужно): можно добавить re.sub, но оставим как есть.
+        await bot.send_message(chat_id=chat_id, text=safe_text, reply_markup=reply_markup)
         if isinstance(target_event, types.CallbackQuery):
             try:
                 await target_event.answer()
@@ -106,7 +142,9 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                 pass
     except TelegramBadRequest as e:
         logging.error(f"Ошибка при отправке текста главного меню: {e}")
-        # молча выходим
+        return
+    except Exception as e:
+        logging.exception(f"Неожиданная ошибка при отправке главного меню: {e}")
         return
 
 async def ensure_required_channel_subscription(
