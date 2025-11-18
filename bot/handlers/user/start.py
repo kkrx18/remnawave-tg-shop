@@ -100,7 +100,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                 logging.warning("FSInputFile недоступен — попытаемся отправить путь как строку.")
                 photo_obj = str(local_image_path)
 
-            await bot.send_photo(chat_id=chat_id, photo=photo_obj, caption=text, reply_markup=reply_markup)
+            await bot.send_photo(chat_id=chat_id, photo=photo_obj, reply_markup=reply_markup)
 
             if isinstance(target_event, types.CallbackQuery):
                 try:
