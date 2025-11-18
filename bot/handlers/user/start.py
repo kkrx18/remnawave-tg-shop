@@ -62,12 +62,19 @@ async def send_main_menu(target_event: Union[types.Message,
     # URL изображения для главного меню
     image_url = "https://cond.kaivpn.ru/img/kaivpnlogo.png"  # Вставь свою ссылку
 
-    # Отправляем изображение
     try:
+        # Проверка URL: если это не правильный тип URL, выводим ошибку
+        if not image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+            raise ValueError("Неверный тип URL, ожидается прямая ссылка на изображение.")
+
+        # Отправляем изображение
         await target_event.answer_photo(image_url)
     except TelegramBadRequest as e:
         logging.error(f"Ошибка при отправке изображения: {e}")
         pass  # Если не удалось отправить изображение, просто пропускаем
+    except ValueError as e:
+        logging.error(f"Ошибка URL изображения: {e}")
+        pass  # Ошибка с URL изображения, логируем и пропускаем
 
     # Текст для главного меню
     text = _(key="main_menu_greeting", user_name=user_full_name)
@@ -79,6 +86,7 @@ async def send_main_menu(target_event: Union[types.Message,
     except TelegramBadRequest as e:
         logging.error(f"Ошибка при отправке текста: {e}")
         pass  # Если не удалось отправить текст, также пропускаем ошибку
+
 
 
 async def ensure_required_channel_subscription(
