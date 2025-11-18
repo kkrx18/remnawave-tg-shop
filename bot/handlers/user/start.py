@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from pathlib import Path
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InputMediaPhoto
 
 from db.dal import user_dal
 from db.models import User
@@ -33,13 +33,13 @@ STATIC_DIR_NAME = "static"
 STATIC_IMAGE_NAME = "kaivpnlogo.png"
 
 async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
-                         settings: Settings,
+                         settings,
                          i18n_data: dict,
-                         subscription_service: SubscriptionService,
-                         session: AsyncSession,
+                         subscription_service,
+                         session,
                          is_edit: bool = False):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-    i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
+    i18n: Optional[object] = i18n_data.get("i18n_instance")
 
     if not i18n:
         logging.error("i18n_instance missing in send_main_menu")
@@ -58,50 +58,51 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Имя пользователя (экранируем)
     user_full_name = hd.quote(target_event.from_user.full_name)
-
-    # Текст для подписи (locales)
     text = _(key="main_menu_greeting", user_name=user_full_name)
 
-    # reply_markup
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
 
-    # Определяем chat_id и bot
+    # Определяем chat_id и message_id для редактирования
     if isinstance(target_event, types.CallbackQuery):
         if not target_event.message:
             logging.error("CallbackQuery.message missing")
             return
         chat_id = target_event.message.chat.id
+        message_id = target_event.message.message_id
     else:
         chat_id = target_event.chat.id
+        message_id = None  # нет редактирования для обычного сообщения
 
     bot = target_event.bot
 
-# Попытка найти локальный файл: рассчитываем путь relative к этому файлу (start.py)
+    # Попытка найти локальный файл
     try:
         this_file = Path(__file__).resolve()
-        bot_dir = this_file.parent.parent.parent  # ../.. up to bot
+        bot_dir = this_file.parent.parent.parent  # ../..
         static_dir = bot_dir / STATIC_DIR_NAME
         local_image_path = static_dir / STATIC_IMAGE_NAME
     except Exception as e:
         logging.exception(f"Не удалось вычислить путь к static: {e}")
         local_image_path = None
 
-    # 1) Если локальный файл найден — отправляем его (через FSInputFile или по пути)
+    photo_obj = None
     if local_image_path and local_image_path.exists():
         try:
-            logging.info(f"Sending local image: {local_image_path}")
-            try:
-                # prefer FSInputFile (правильный тип для aiogram v3)
-                photo_obj = FSInputFile(path=str(local_image_path))
-            except Exception:
-                # fallback: иногда можно отправить строку с путем
-                logging.warning("FSInputFile недоступен — попытаемся отправить путь как строку.")
-                photo_obj = str(local_image_path)
+            photo_obj = FSInputFile(str(local_image_path))
+        except Exception:
+            photo_obj = str(local_image_path)
 
-            await bot.send_photo(chat_id=chat_id, photo=photo_obj, reply_markup=reply_markup)
-
+    # 1) Если редактирование сообщения и есть photo_obj — используем edit_message_media
+    if is_edit and message_id and photo_obj:
+        try:
+            media = InputMediaPhoto(media=photo_obj, caption=text)
+            await bot.edit_message_media(
+                media=media,
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=reply_markup
+            )
             if isinstance(target_event, types.CallbackQuery):
                 try:
                     await target_event.answer()
@@ -109,54 +110,51 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                     pass
             return
         except TelegramBadRequest as e:
-            logging.warning(f"send_photo(local) failed, fallback to URL/message. Error: {e}")
+            logging.warning(f"edit_message_media failed, fallback to send_photo: {e}")
+
+    # 2) Отправляем новое сообщение с фото (если есть)
+    if photo_obj:
+        try:
+            await bot.send_photo(chat_id=chat_id, photo=photo_obj, reply_markup=reply_markup)
+            if isinstance(target_event, types.CallbackQuery):
+                try:
+                    await target_event.answer()
+                except Exception:
+                    pass
+            return
         except Exception as e:
             logging.exception(f"Ошибка при отправке локального фото: {e}")
 
-    # 2) Если локального файла нет или он не отправился — пробуем image_url из i18n (если есть)
+    # 3) Если локального фото нет — пробуем URL
     image_url = None
     try:
         image_url = i18n.gettext(current_lang, "main_menu_image")
     except Exception:
         image_url = getattr(settings, "MAIN_MENU_IMAGE", None)
 
-    if image_url:
-        # Только если похоже на картинку — попытаться отправить по URL
-        if isinstance(image_url, str) and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-            try:
-                logging.info(f"Sending image by URL: {image_url}")
-                await bot.send_photo(chat_id=chat_id, photo=image_url, reply_markup=reply_markup)  # caption=text, 
-                if isinstance(target_event, types.CallbackQuery):
-                    try:
-                        await target_event.answer()
-                    except Exception:
-                        pass
-                return
-            except TelegramBadRequest as e:
-                logging.warning(f"send_photo(URL) failed, fallback to send message. Error: {e}")
-            except Exception as e:
-                logging.exception(f"Ошибка при отправке фото по URL: {e}")
-        else:
-            logging.warning("image_url не похож на прямую ссылку на изображение или отсутствует.")
+    if image_url and isinstance(image_url, str) and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+        try:
+            await bot.send_photo(chat_id=chat_id, photo=image_url, reply_markup=reply_markup)
+            if isinstance(target_event, types.CallbackQuery):
+                try:
+                    await target_event.answer()
+                except Exception:
+                    pass
+            return
+        except Exception as e:
+            logging.exception(f"Ошибка при отправке фото по URL: {e}")
 
-    # 3) Финальный фолбэк — отправляем обычный текст (без ссылок)
+    # 4) Фолбэк — просто текст
     try:
-        # Если в тексте случайно осталась ссылка на картинку (в старом ru.json), лучше очистить.
-        safe_text = text
-        # Простой способ убрать явные http ссылки (если нужно): можно добавить re.sub, но оставим как есть.
-        #await bot.send_message(chat_id=chat_id, text=safe_text, reply_markup=reply_markup)
         if isinstance(target_event, types.CallbackQuery):
-            try:
-                await target_event.answer()
-            except Exception:
-                pass
-    except TelegramBadRequest as e:
-        logging.error(f"Ошибка при отправке текста главного меню: {e}")
-        return
+            await target_event.message.edit_text(text=text, reply_markup=reply_markup)
+            await target_event.answer()
+        else:
+            await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
     except Exception as e:
-        logging.exception(f"Неожиданная ошибка при отправке главного меню: {e}")
-        return
-
+        logging.exception(f"Финальный фолбэк текста главного меню не удался: {e}")
+    
+    
 async def ensure_required_channel_subscription(
         event: Union[types.Message, types.CallbackQuery],
         settings: Settings,
