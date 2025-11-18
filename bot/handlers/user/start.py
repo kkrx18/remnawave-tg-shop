@@ -125,7 +125,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
         if isinstance(image_url, str) and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
             try:
                 logging.info(f"Sending image by URL: {image_url}")
-                await bot.send_photo(chat_id=chat_id, photo=image_url, caption=text, reply_markup=reply_markup)
+                await bot.send_photo(chat_id=chat_id, photo=image_url, reply_markup=reply_markup)  # caption=text, 
                 if isinstance(target_event, types.CallbackQuery):
                     try:
                         await target_event.answer()
@@ -144,7 +144,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
         # Если в тексте случайно осталась ссылка на картинку (в старом ru.json), лучше очистить.
         safe_text = text
         # Простой способ убрать явные http ссылки (если нужно): можно добавить re.sub, но оставим как есть.
-        await bot.send_message(chat_id=chat_id, text=safe_text, reply_markup=reply_markup)
+        #await bot.send_message(chat_id=chat_id, text=safe_text, reply_markup=reply_markup)
         if isinstance(target_event, types.CallbackQuery):
             try:
                 await target_event.answer()
