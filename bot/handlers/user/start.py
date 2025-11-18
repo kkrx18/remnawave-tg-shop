@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from pathlib import Path
+from aiogram.types import FSInputFile
 
 from db.dal import user_dal
 from db.models import User
@@ -77,10 +78,9 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     bot = target_event.bot
 
-    # Попытка найти локальный файл: рассчитываем путь relative к этому файлу (start.py)
+# Попытка найти локальный файл: рассчитываем путь relative к этому файлу (start.py)
     try:
         this_file = Path(__file__).resolve()
-        # start.py -> .../user/ -> handlers/ -> bot/
         bot_dir = this_file.parent.parent.parent  # ../.. up to bot
         static_dir = bot_dir / STATIC_DIR_NAME
         local_image_path = static_dir / STATIC_IMAGE_NAME
@@ -88,13 +88,20 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
         logging.exception(f"Не удалось вычислить путь к static: {e}")
         local_image_path = None
 
-    # 1) Если локальный файл найден — отправляем его (гарантированный бинарный upload)
+    # 1) Если локальный файл найден — отправляем его (через FSInputFile или по пути)
     if local_image_path and local_image_path.exists():
         try:
             logging.info(f"Sending local image: {local_image_path}")
-            # Открываем файл в бинарном режиме и отправляем
-            with open(local_image_path, "rb") as photo_file:
-                await bot.send_photo(chat_id=chat_id, photo=photo_file, caption=text, reply_markup=reply_markup)
+            try:
+                # prefer FSInputFile (правильный тип для aiogram v3)
+                photo_obj = FSInputFile(path=str(local_image_path))
+            except Exception:
+                # fallback: иногда можно отправить строку с путем
+                logging.warning("FSInputFile недоступен — попытаемся отправить путь как строку.")
+                photo_obj = str(local_image_path)
+
+            await bot.send_photo(chat_id=chat_id, photo=photo_obj, caption=text, reply_markup=reply_markup)
+
             if isinstance(target_event, types.CallbackQuery):
                 try:
                     await target_event.answer()

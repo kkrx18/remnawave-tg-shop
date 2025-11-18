@@ -10,6 +10,7 @@ services:
       - remnawave-network
     volumes:
       - ./locales:/app/locales
+      - ./bot/static:/app/bot/static:ro
     restart: unless-stopped
     depends_on:
       remnawave-tg-shop-db:

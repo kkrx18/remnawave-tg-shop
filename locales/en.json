@@ -6,7 +6,6 @@
   "channel_subscription_check_failed": "Couldn't verify the subscription. Please try again later or contact support.",
   "channel_subscription_verified_success": "✅ Subscription confirmed! You're good to go.",
   "main_menu_greeting": "Hi!",
-  "main_menu_image": "https://cond.kaivpn.ru/img/kaivpnlogo.png",
   "menu_activate_trial_button": "🆓 Free Trial",
   "menu_subscribe_inline": "💵Purchase💵",
   "menu_my_subscription_inline": "🔐 My Subscription",
