@@ -73,7 +73,7 @@ async def send_main_menu(target_event: Union[types.Message,
                 "Method has_had_any_subscription is missing in SubscriptionService for send_main_menu!"
             )
 
-    image_url = "https://example.com/image.jpg"  # Вставь свою ссылку
+    image_url = "https://cond.kaivpn.ru/img/kaivpnlogo.png"  # Вставь свою ссылку
 
     # Отправляем изображение
     await target_event.answer_photo(image_url)
