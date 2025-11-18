@@ -28,6 +28,9 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
+STATIC_DIR_NAME = "static"
+STATIC_IMAGE_NAME = "kaivpnlogo.png"
+
 async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
                          settings: Settings,
                          i18n_data: dict,
