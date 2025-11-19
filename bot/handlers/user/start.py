@@ -37,7 +37,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                          session: AsyncSession,
                          is_edit: bool = False):
     """
-    Отправляет главное меню как локальную картинку (/bot/static/mainmenu.png) + inline-кнопки.
+    Отправляет главное меню как локальную картинку (bot/static/mainmenu.png) + inline-кнопки.
     Если файл не доступен — делает fallback в виде текстового меню.
     Использует FSInputFile (aiogram) для локального файла.
     """
@@ -74,7 +74,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings, show_trial_button_in_menu)
 
-    MAIN_MENU_IMAGE_PATH = "/bot/static/mainmenu.png"
+    MAIN_MENU_IMAGE_PATH = "bot/static/mainmenu.png"
 
     # Получаем объект message (если вызов из callback — callback.message; если из message — message)
     message_obj: Optional[types.Message] = None
