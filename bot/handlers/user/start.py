@@ -8,6 +8,8 @@ from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import FSInputFile, InputMediaPhoto
+import os
 
 from db.dal import user_dal
 from db.models import User
@@ -27,9 +29,6 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
-# Путь к локальной картинке главного меню (как вы указали)
-MAIN_MENU_IMAGE_PATH = "/bot/static/mainmenu.png"
-
 
 async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
                          settings: Settings,
@@ -38,9 +37,10 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                          session: AsyncSession,
                          is_edit: bool = False):
     """
-    Отправляет главное меню как фотографию с подписью (caption) и инлайн-клавиатурой.
-    Если is_edit=True и есть контекст сообщения — пытается заменить media (edit_media).
-    В противном случае отправляет новое сообщение с фото.
+    Отправляет главное меню как локальную картинку (/bot/static/mainmenu.png) + inline-кнопки.
+    При is_edit=True пытается edit_media (заменить содержимое сообщения), иначе отправляет новое.
+    Если файл недоступен — делает fallback на текстовое меню.
+    Использует types.FSInputFile (чтобы не было ошибки "Can't instantiate abstract class InputFile").
     """
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
@@ -49,9 +49,7 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
     user_full_name = hd.quote(target_event.from_user.full_name)
 
     if not i18n:
-        logging.error(
-            f"i18n_instance missing in send_main_menu for user {user_id}"
-        )
+        logging.error(f"i18n_instance missing in send_main_menu for user {user_id}")
         err_msg_fallback = "Error: Language service unavailable. Please try again later."
         if isinstance(target_event, types.CallbackQuery):
             try:
@@ -67,7 +65,6 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Проверяем условие показа trial-кнопки (как было)
     show_trial_button_in_menu = False
     if settings.TRIAL_ENABLED:
         if hasattr(subscription_service, 'has_had_any_subscription') and callable(getattr(subscription_service, 'has_had_any_subscription')):
@@ -79,54 +76,86 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
     text = _(key="main_menu_greeting", user_name=user_full_name)
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings, show_trial_button_in_menu)
 
+    # Получаем объект message (если есть)
     target_message_obj: Optional[types.Message] = None
     if isinstance(target_event, types.Message):
         target_message_obj = target_event
     elif isinstance(target_event, types.CallbackQuery) and target_event.message:
         target_message_obj = target_event.message
 
-    if not target_message_obj and isinstance(target_event, types.CallbackQuery):
-        # Попробуем всё-таки ответить пользователю отдельным сообщением
-        target_message_obj = target_event
+    # Путь к локальной картинке (используй именно этот путь, если фото у тебя там)
+    MAIN_MENU_IMAGE_PATH = "/bot/static/mainmenu.png"
+
+    # Если сообщение/контекст отсутствует — короткий fallback
+    if not target_message_obj:
+        logging.error(f"send_main_menu: target_message_obj is None for event from user {user_id}.")
+        if isinstance(target_event, types.CallbackQuery):
+            try:
+                await target_event.answer(_("error_displaying_menu"), show_alert=True)
+            except Exception:
+                pass
+        return
+
+    # Попробуем отправить фото; если файл недоступен — отправим текст с кнопками
+    import os
+    has_image = os.path.isfile(MAIN_MENU_IMAGE_PATH) and os.access(MAIN_MENU_IMAGE_PATH, os.R_OK)
 
     try:
-        # Если требуется редактировать существующее сообщение — попробуем edit_media (фото)
-        if is_edit and isinstance(target_message_obj, types.Message):
-            try:
-                media = types.InputMediaPhoto(types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text)
-                await target_message_obj.edit_media(media=media, reply_markup=reply_markup)
-            except Exception as e_edit_media:
-                logging.warning(f"edit_media failed for user {user_id}: {e_edit_media}. Falling back to send new photo.")
-                # Если не удалось редактировать, отправим новое сообщение с фото
+        if has_image:
+            # Используем types.FSInputFile чтобы избежать ошибки с InputFile
+            fsfile = types.FSInputFile(MAIN_MENU_IMAGE_PATH)
+
+            if is_edit and isinstance(target_message_obj, types.Message):
+                # Пытаемся заменить media в том же сообщении
                 try:
-                    await target_message_obj.answer_photo(types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text, reply_markup=reply_markup)
-                except Exception as e_send_new:
-                    logging.error(f"Failed to send new main menu photo for user {user_id}: {e_send_new}")
-        else:
-            # Отправляем новое сообщение — фото с подписью и клавиатурой
-            if isinstance(target_event, types.CallbackQuery) and target_event.message:
-                # Лучше отправлять в контекст сообщения (ответом)
-                try:
-                    await target_event.message.answer_photo(types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text, reply_markup=reply_markup)
-                except Exception as e_msg_answer:
-                    logging.warning(f"Failed to answer with photo in message context for user {user_id}: {e_msg_answer}. Trying to send a message directly.")
+                    media = types.InputMediaPhoto(media=fsfile, caption=text)
+                    await target_message_obj.edit_media(media=media, reply_markup=reply_markup)
+                except Exception as e_media:
+                    logging.warning(f"edit_media failed for user {user_id}: {e_media}. Sending new photo instead.")
                     try:
-                        await target_event.bot.send_photo(chat_id=user_id, photo=types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text, reply_markup=reply_markup)
+                        await target_message_obj.answer_photo(fsfile, caption=text, reply_markup=reply_markup)
+                    except Exception as e_send_new:
+                        logging.error(f"Failed to send new main menu photo for user {user_id}: {e_send_new}")
+            else:
+                # Отправляем новое сообщение с фото (в контексте callback — ответ в message)
+                if isinstance(target_event, types.CallbackQuery) and target_event.message:
+                    try:
+                        await target_event.message.answer_photo(fsfile, caption=text, reply_markup=reply_markup)
+                    except Exception as e_msg_answer:
+                        logging.warning(f"Failed to answer with photo in message context for user {user_id}: {e_msg_answer}. Trying direct send.")
+                        try:
+                            await target_event.bot.send_photo(chat_id=user_id, photo=fsfile, caption=text, reply_markup=reply_markup)
+                        except Exception as e_send:
+                            logging.error(f"Also failed to send photo directly to user {user_id}: {e_send}")
+                elif isinstance(target_event, types.Message):
+                    try:
+                        await target_event.answer_photo(fsfile, caption=text, reply_markup=reply_markup)
                     except Exception as e_send:
-                        logging.error(f"Also failed to send photo directly to user {user_id}: {e_send}")
+                        logging.error(f"Failed to send main menu photo for user {user_id}: {e_send}")
+                else:
+                    # Фоллбек: отправка напрямую
+                    fallback_bot: Optional[Bot] = getattr(target_event, "bot", None)
+                    if fallback_bot:
+                        try:
+                            await fallback_bot.send_photo(chat_id=user_id, photo=fsfile, caption=text, reply_markup=reply_markup)
+                        except Exception as e_send:
+                            logging.error(f"Fallback send_photo failed for user {user_id}: {e_send}")
+        else:
+            # Файл недоступен — отправляем текстовое меню (fallback)
+            logging.error(f"Main menu image not found or not readable at path: {MAIN_MENU_IMAGE_PATH}")
+            if isinstance(target_event, types.CallbackQuery) and target_event.message:
+                try:
+                    await target_event.message.edit_text(text, reply_markup=reply_markup)
+                except Exception:
+                    try:
+                        await target_event.message.answer(text, reply_markup=reply_markup)
+                    except Exception as e_fallback:
+                        logging.error(f"Failed to send fallback main menu text for user {user_id}: {e_fallback}")
             elif isinstance(target_event, types.Message):
                 try:
-                    await target_event.answer_photo(types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text, reply_markup=reply_markup)
-                except Exception as e_send:
-                    logging.error(f"Failed to send main menu photo for user {user_id}: {e_send}")
-            else:
-                # Фоллбек: если у нас CallbackQuery без message (маловероятно)
-                fallback_bot: Optional[Bot] = getattr(target_event, "bot", None)
-                if fallback_bot:
-                    try:
-                        await fallback_bot.send_photo(chat_id=user_id, photo=types.InputFile(MAIN_MENU_IMAGE_PATH), caption=text, reply_markup=reply_markup)
-                    except Exception as e_send:
-                        logging.error(f"Fallback send_photo failed for user {user_id}: {e_send}")
+                    await target_event.answer(text, reply_markup=reply_markup)
+                except Exception as e_fallback:
+                    logging.error(f"Failed to send fallback main menu text for user {user_id}: {e_fallback}")
 
         if isinstance(target_event, types.CallbackQuery):
             try:
@@ -135,19 +164,18 @@ async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery]
                 pass
 
     except Exception as e_send_edit:
-        logging.warning(
-            f"Failed to send/edit main menu (user: {user_id}, is_edit: {is_edit}): {type(e_send_edit).__name__} - {e_send_edit}."
-        )
-        if is_edit and target_message_obj:
-            try:
-                await target_message_obj.answer(text, reply_markup=reply_markup)
-            except Exception as e_send_new:
-                logging.error(f"Also failed to send new main menu message for user {user_id}: {e_send_new}")
+        logging.warning(f"Failed to send/edit main menu (user: {user_id}, is_edit: {is_edit}): {type(e_send_edit).__name__} - {e_send_edit}.")
+        # Фоллбек: отправить текст
+        try:
+            await target_message_obj.answer(text, reply_markup=reply_markup)
+        except Exception as e_send_new:
+            logging.error(f"Also failed to send new main menu message for user {user_id}: {e_send_new}")
         if isinstance(target_event, types.CallbackQuery):
             try:
                 await target_event.answer(_(key="error_occurred_try_again") if is_edit else None)
             except Exception:
                 pass
+
 
 
 async def ensure_required_channel_subscription(
@@ -177,7 +205,9 @@ async def ensure_required_channel_subscription(
         message_obj = event
 
     if bot_instance is None:
-        logging.error("Channel subscription check: bot instance missing for user %s.", user_id)
+        logging.error(
+            "Channel subscription check: bot instance missing for user %s.", user_id
+        )
         return False
 
     if user_id in settings.ADMIN_IDS:
@@ -187,14 +217,24 @@ async def ensure_required_channel_subscription(
         try:
             db_user = await user_dal.get_user_by_id(session, user_id)
         except Exception as fetch_error:
-            logging.error("Channel subscription check: failed to fetch user %s: %s", user_id, fetch_error, exc_info=True)
+            logging.error(
+                "Channel subscription check: failed to fetch user %s: %s",
+                user_id,
+                fetch_error,
+                exc_info=True,
+            )
             return False
 
     if not db_user:
-        logging.warning("Required channel check skipped because user %s is not persisted yet.", user_id)
+        logging.warning(
+            "Required channel check skipped because user %s is not persisted yet.",
+            user_id,
+        )
         return True
 
-    if (db_user.channel_subscription_verified and db_user.channel_subscription_verified_for == required_channel_id):
+    if (db_user.channel_subscription_verified
+            and db_user.channel_subscription_verified_for
+            == required_channel_id):
         return True
 
     def translate(key: str, **kwargs) -> str:
@@ -214,9 +254,16 @@ async def ensure_required_channel_subscription(
         if status_value in allowed_statuses:
             is_member = True
     except TelegramBadRequest as bad_request:
-        logging.info("Required channel check: user %s not subscribed (details: %s)", user_id, bad_request)
+        logging.info(
+            "Required channel check: user %s not subscribed (details: %s)",
+            user_id,
+            bad_request,
+        )
     except TelegramForbiddenError as forbidden_error:
-        logging.error("Required channel check failed due to insufficient permissions: %s", forbidden_error)
+        logging.error(
+            "Required channel check failed due to insufficient permissions: %s",
+            forbidden_error,
+        )
         error_text = translate("channel_subscription_check_failed")
         if isinstance(event, types.CallbackQuery):
             try:
@@ -232,7 +279,12 @@ async def ensure_required_channel_subscription(
             await event.answer(error_text)
         return False
     except TelegramAPIError as api_error:
-        logging.error("Required channel check failed for user %s: %s", user_id, api_error, exc_info=True)
+        logging.error(
+            "Required channel check failed for user %s: %s",
+            user_id,
+            api_error,
+            exc_info=True,
+        )
         error_text = translate("channel_subscription_check_failed")
         if isinstance(event, types.CallbackQuery):
             try:
@@ -256,13 +308,27 @@ async def ensure_required_channel_subscription(
     try:
         await user_dal.update_user(session, user_id, update_payload)
     except Exception as update_error:
-        logging.error("Failed to persist channel verification result for user %s: %s", user_id, update_error, exc_info=True)
+        logging.error(
+            "Failed to persist channel verification result for user %s: %s",
+            user_id,
+            update_error,
+            exc_info=True,
+        )
 
     if is_member:
-        logging.info("User %s confirmed as member of required channel %s (status=%s).", user_id, required_channel_id, status_value)
+        logging.info(
+            "User %s confirmed as member of required channel %s (status=%s).",
+            user_id,
+            required_channel_id,
+            status_value,
+        )
         return True
 
-    keyboard = (get_channel_subscription_keyboard(current_lang, i18n, settings.REQUIRED_CHANNEL_LINK) if i18n else None)
+    keyboard = (get_channel_subscription_keyboard(
+        current_lang, i18n, settings.REQUIRED_CHANNEL_LINK
+    )
+               if i18n else None)
+
     prompt_text = translate("channel_subscription_required")
 
     if isinstance(event, types.CallbackQuery):
@@ -270,7 +336,11 @@ async def ensure_required_channel_subscription(
             try:
                 await event.message.edit_text(prompt_text, reply_markup=keyboard)
             except Exception as edit_error:
-                logging.debug("Failed to edit prompt message for user %s: %s", user_id, edit_error)
+                logging.debug(
+                    "Failed to edit prompt message for user %s: %s",
+                    user_id,
+                    edit_error,
+                )
         if keyboard is None and message_obj:
             try:
                 await message_obj.answer(prompt_text)
@@ -302,7 +372,8 @@ async def start_command_handler(message: types.Message,
     await state.clear()
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
-    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs) if i18n else key
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs
+                                           ) if i18n else key
 
     user = message.from_user
     user_id = user.id
@@ -316,7 +387,8 @@ async def start_command_handler(message: types.Message,
         if raw_ref_value.isdigit():
             if settings.LEGACY_REFS:
                 potential_referrer_id = int(raw_ref_value)
-                if potential_referrer_id != user_id and await user_dal.get_user_by_id(session, potential_referrer_id):
+                if potential_referrer_id != user_id and await user_dal.get_user_by_id(
+                        session, potential_referrer_id):
                     referred_by_user_id = potential_referrer_id
         else:
             normalized_code = raw_ref_value.strip()
@@ -324,7 +396,8 @@ async def start_command_handler(message: types.Message,
                 normalized_code = normalized_code[1:]
             ref_user = None
             if normalized_code:
-                ref_user = await user_dal.get_user_by_referral_code(session, normalized_code)
+                ref_user = await user_dal.get_user_by_referral_code(
+                    session, normalized_code)
             if ref_user and ref_user.user_id != user_id:
                 referred_by_user_id = ref_user.user_id
     elif promo_match:
@@ -357,11 +430,16 @@ async def start_command_handler(message: types.Message,
                     await session.commit()
                 except Exception as commit_error:
                     await session.rollback()
-                    logging.error(f"Failed to commit new user {user_id}: {commit_error}", exc_info=True)
+                    logging.error(
+                        f"Failed to commit new user {user_id}: {commit_error}",
+                        exc_info=True,
+                    )
                     await message.answer(_("error_occurred_processing_request"))
                     return
 
-                logging.info(f"New user {user_id} added to session. Referred by: {referred_by_user_id or 'N/A'}.")
+                logging.info(
+                    f"New user {user_id} added to session. Referred by: {referred_by_user_id or 'N/A'}."
+                )
 
                 # Send notification about new user registration
                 try:
@@ -376,13 +454,18 @@ async def start_command_handler(message: types.Message,
                 except Exception as e:
                     logging.error(f"Failed to send new user notification: {e}")
         except Exception as e_create:
-            logging.error(f"Failed to add new user {user_id} to session: {e_create}", exc_info=True)
+
+            logging.error(
+                f"Failed to add new user {user_id} to session: {e_create}",
+                exc_info=True)
             await message.answer(_("error_occurred_processing_request"))
             return
     else:
         update_payload = {}
         if db_user.language_code != current_lang:
             update_payload["language_code"] = current_lang
+        # Set referral only if not already set AND user is not currently active.
+        # This allows previously subscribed but currently inactive users to be attributed.
         if referred_by_user_id and db_user.referred_by_id is None:
             try:
                 is_active_now = await subscription_service.has_active_subscription(session, user_id)
@@ -400,10 +483,17 @@ async def start_command_handler(message: types.Message,
         if update_payload:
             try:
                 await user_dal.update_user(session, user_id, update_payload)
-                logging.info(f"Updated existing user {user_id} in session: {update_payload}")
-            except Exception as e_update:
-                logging.error(f"Failed to update existing user {user_id} in session: {e_update}", exc_info=True)
 
+                logging.info(
+                    f"Updated existing user {user_id} in session: {update_payload}"
+                )
+            except Exception as e_update:
+
+                logging.error(
+                    f"Failed to update existing user {user_id} in session: {e_update}",
+                    exc_info=True)
+
+    # Attribute user to ad campaign if start param provided
     if ad_start_param:
         try:
             from db.dal import ad_dal as _ad_dal
@@ -418,59 +508,82 @@ async def start_command_handler(message: types.Message,
             except Exception:
                 pass
 
-    if not await ensure_required_channel_subscription(message, settings, i18n, current_lang, session, db_user):
+    if not await ensure_required_channel_subscription(message, settings, i18n,
+                                                      current_lang, session,
+                                                      db_user):
         return
 
+    # Send welcome message if not disabled
     if not settings.DISABLE_WELCOME_MESSAGE:
         await message.answer(_(key="welcome", user_name=hd.quote(user.full_name)))
 
+    # Auto-apply promo code if provided via start parameter
     if promo_code_to_apply:
         try:
             from bot.services.promo_code_service import PromoCodeService
             promo_code_service = PromoCodeService(settings, subscription_service, message.bot, i18n)
 
-            success, result = await promo_code_service.apply_promo_code(session, user_id, promo_code_to_apply, current_lang)
+            success, result = await promo_code_service.apply_promo_code(
+                session, user_id, promo_code_to_apply, current_lang
+            )
 
             if success:
                 await session.commit()
                 logging.info(f"Auto-applied promo code '{promo_code_to_apply}' for user {user_id}")
 
+                # Get updated subscription details
                 active = await subscription_service.get_active_subscription_details(session, user_id)
                 config_link = active.get("config_link") if active else None
                 config_link = config_link or _("config_link_not_available")
 
                 new_end_date = result if isinstance(result, datetime) else None
 
-                promo_success_text = _("promo_code_applied_success_full",
-                                       end_date=(new_end_date.strftime("%d.%m.%Y %H:%M:%S") if new_end_date else "N/A"),
-                                       config_link=config_link)
+                promo_success_text = _(
+                    "promo_code_applied_success_full",
+                    end_date=(new_end_date.strftime("%d.%m.%Y %H:%M:%S") if new_end_date else "N/A"),
+                    config_link=config_link,
+                )
 
                 from bot.keyboards.inline.user_keyboards import get_connect_and_main_keyboard
-                await message.answer(promo_success_text, reply_markup=get_connect_and_main_keyboard(current_lang, i18n, settings, config_link), parse_mode="HTML")
+                await message.answer(
+                    promo_success_text,
+                    reply_markup=get_connect_and_main_keyboard(current_lang, i18n, settings, config_link),
+                    parse_mode="HTML"
+                )
 
+                # Don't show main menu if promo was successfully applied
                 return
             else:
                 await session.rollback()
                 logging.warning(f"Failed to auto-apply promo code '{promo_code_to_apply}' for user {user_id}: {result}")
+                # Continue to show main menu if promo failed
+
         except Exception as e:
             logging.error(f"Error auto-applying promo code '{promo_code_to_apply}' for user {user_id}: {e}")
             await session.rollback()
 
-    await send_main_menu(message, settings, i18n_data, subscription_service, session, is_edit=False)
+    await send_main_menu(message,
+                         settings,
+                         i18n_data,
+                         subscription_service,
+                         session,
+                         is_edit=False)
 
 
 @router.callback_query(F.data == "channel_subscription:verify")
-async def verify_channel_subscription_callback(callback: types.CallbackQuery,
-                                               settings: Settings,
-                                               i18n_data: dict,
-                                               subscription_service: SubscriptionService,
-                                               session: AsyncSession):
+async def verify_channel_subscription_callback(
+        callback: types.CallbackQuery,
+        settings: Settings,
+        i18n_data: dict,
+        subscription_service: SubscriptionService,
+        session: AsyncSession):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
 
     db_user = await user_dal.get_user_by_id(session, callback.from_user.id)
 
-    verified = await ensure_required_channel_subscription(callback, settings, i18n, current_lang, session, db_user)
+    verified = await ensure_required_channel_subscription(
+        callback, settings, i18n, current_lang, session, db_user)
     if not verified:
         return
 
@@ -484,20 +597,28 @@ async def verify_channel_subscription_callback(callback: types.CallbackQuery,
         _ = lambda key, **kwargs: key
 
     if not settings.DISABLE_WELCOME_MESSAGE:
-        welcome_text = _(key="welcome", user_name=hd.quote(callback.from_user.full_name))
+        welcome_text = _(key="welcome",
+                         user_name=hd.quote(callback.from_user.full_name))
         if callback.message:
             await callback.message.answer(welcome_text)
         else:
             fallback_bot: Optional[Bot] = getattr(callback, "bot", None)
             if fallback_bot:
-                await fallback_bot.send_message(callback.from_user.id, welcome_text)
+                await fallback_bot.send_message(callback.from_user.id,
+                                                welcome_text)
 
     try:
-        await callback.answer(_(key="channel_subscription_verified_success"), show_alert=True)
+        await callback.answer(_(key="channel_subscription_verified_success"),
+                              show_alert=True)
     except Exception:
         pass
 
-    await send_main_menu(callback, settings, i18n_data, subscription_service, session, is_edit=bool(callback.message))
+    await send_main_menu(callback,
+                         settings,
+                         i18n_data,
+                         subscription_service,
+                         session,
+                         is_edit=bool(callback.message))
 
 
 @router.message(Command("language"))
@@ -509,12 +630,14 @@ async def language_command_handler(
 ):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
-    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs) if i18n else key
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs
+                                           ) if i18n else key
 
     text_to_send = _(key="choose_language")
     reply_markup = get_language_selection_keyboard(i18n, current_lang)
 
-    target_message_obj = event.message if isinstance(event, types.CallbackQuery) else event
+    target_message_obj = event.message if isinstance(
+        event, types.CallbackQuery) else event
     if not target_message_obj:
         if isinstance(event, types.CallbackQuery):
             await event.answer(_("error_occurred_try_again"), show_alert=True)
@@ -523,51 +646,69 @@ async def language_command_handler(
     if isinstance(event, types.CallbackQuery):
         if event.message:
             try:
-                await event.message.edit_text(text_to_send, reply_markup=reply_markup)
+                await event.message.edit_text(text_to_send,
+                                              reply_markup=reply_markup)
             except Exception:
-                await target_message_obj.answer(text_to_send, reply_markup=reply_markup)
+                await target_message_obj.answer(text_to_send,
+                                                reply_markup=reply_markup)
         await event.answer()
     else:
-        await target_message_obj.answer(text_to_send, reply_markup=reply_markup)
+        await target_message_obj.answer(text_to_send,
+                                        reply_markup=reply_markup)
 
 
 @router.callback_query(F.data.startswith("set_lang_"))
-async def select_language_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings,
-                                           subscription_service: SubscriptionService, session: AsyncSession):
+async def select_language_callback_handler(
+        callback: types.CallbackQuery, i18n_data: dict, settings: Settings,
+        subscription_service: SubscriptionService, session: AsyncSession):
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
     if not i18n or not callback.message:
-        await callback.answer("Service error or message context lost.", show_alert=True)
+        await callback.answer("Service error or message context lost.",
+                              show_alert=True)
         return
 
     try:
         lang_code = callback.data.split("_")[2]
     except IndexError:
-        await callback.answer("Error processing language selection.", show_alert=True)
+        await callback.answer("Error processing language selection.",
+                              show_alert=True)
         return
 
     user_id = callback.from_user.id
     try:
-        updated = await user_dal.update_user_language(session, user_id, lang_code)
+        updated = await user_dal.update_user_language(session, user_id,
+                                                      lang_code)
         if updated:
+
             i18n_data["current_language"] = lang_code
             _ = lambda key, **kwargs: i18n.gettext(lang_code, key, **kwargs)
             await callback.answer(_(key="language_set_alert"))
-            logging.info(f"User {user_id} language updated to {lang_code} in session.")
+            logging.info(
+                f"User {user_id} language updated to {lang_code} in session.")
         else:
             await callback.answer("Could not set language.", show_alert=True)
             return
     except Exception as e_lang_update:
-        logging.error(f"Error updating lang for user {user_id}: {e_lang_update}", exc_info=True)
+
+        logging.error(
+            f"Error updating lang for user {user_id}: {e_lang_update}",
+            exc_info=True)
         await callback.answer("Error setting language.", show_alert=True)
         return
-    await send_main_menu(callback, settings, i18n_data, subscription_service, session, is_edit=True)
+    await send_main_menu(callback,
+                         settings,
+                         i18n_data,
+                         subscription_service,
+                         session,
+                         is_edit=True)
 
 
 @router.callback_query(F.data.startswith("main_action:"))
-async def main_action_callback_handler(callback: types.CallbackQuery, state: FSMContext, settings: Settings,
-                                       i18n_data: dict, bot: Bot, subscription_service: SubscriptionService,
-                                       referral_service: ReferralService, panel_service: PanelApiService,
-                                       promo_code_service: PromoCodeService, session: AsyncSession):
+async def main_action_callback_handler(
+        callback: types.CallbackQuery, state: FSMContext, settings: Settings,
+        i18n_data: dict, bot: Bot, subscription_service: SubscriptionService,
+        referral_service: ReferralService, panel_service: PanelApiService,
+        promo_code_service: PromoCodeService, session: AsyncSession):
     action = callback.data.split(":")[1]
     user_id = callback.from_user.id
 
@@ -579,10 +720,7 @@ async def main_action_callback_handler(callback: types.CallbackQuery, state: FSM
     if not callback.message:
         await callback.answer("Error: message context lost.", show_alert=True)
         return
-
-    # Для действий, которые должны показать подменю — удаляем главное меню (чтобы оно "пропало"),
-    # затем вызываем обработчик, который отправит своё меню/сообщение.
-    # Не удаляем в случаях, когда нужно вернуться в главное меню или выбрать язык (т.к. там мы редактируем).
+    
     try:
         if action in {"subscribe", "my_subscription", "my_devices", "referral", "apply_promo", "request_trial"}:
             try:
@@ -592,25 +730,47 @@ async def main_action_callback_handler(callback: types.CallbackQuery, state: FSM
     except Exception:
         pass
 
+    
+
     if action == "subscribe":
-        await user_subscription_handlers.display_subscription_options(callback, i18n_data, settings, session)
+        await user_subscription_handlers.display_subscription_options(
+            callback, i18n_data, settings, session)
     elif action == "my_subscription":
-        await user_subscription_handlers.my_subscription_command_handler(callback, i18n_data, settings, panel_service, subscription_service, session, bot)
+        await user_subscription_handlers.my_subscription_command_handler(
+            callback, i18n_data, settings, panel_service, subscription_service,
+            session, bot)
     elif action == "my_devices":
-        await user_subscription_handlers.my_devices_command_handler(callback, i18n_data, settings, panel_service, subscription_service, session, bot)
+        await user_subscription_handlers.my_devices_command_handler(
+            callback, i18n_data, settings, panel_service, subscription_service,
+            session, bot)
     elif action == "referral":
-        await user_referral_handlers.referral_command_handler(callback, settings, i18n_data, referral_service, bot, session)
+        await user_referral_handlers.referral_command_handler(
+            callback, settings, i18n_data, referral_service, bot, session)
     elif action == "apply_promo":
-        await user_promo_handlers.prompt_promo_code_input(callback, state, i18n_data, settings, session)
+        await user_promo_handlers.prompt_promo_code_input(
+            callback, state, i18n_data, settings, session)
     elif action == "request_trial":
-        await user_trial_handlers.request_trial_confirmation_handler(callback, settings, i18n_data, subscription_service, session)
+        await user_trial_handlers.request_trial_confirmation_handler(
+            callback, settings, i18n_data, subscription_service, session)
     elif action == "language":
+
         await language_command_handler(callback, i18n_data, settings)
     elif action == "back_to_main":
-        await send_main_menu(callback, settings, i18n_data, subscription_service, session, is_edit=True)
+        await send_main_menu(callback,
+                             settings,
+                             i18n_data,
+                             subscription_service,
+                             session,
+                             is_edit=True)
     elif action == "back_to_main_keep":
-        await send_main_menu(callback, settings, i18n_data, subscription_service, session, is_edit=False)
+        await send_main_menu(callback,
+                             settings,
+                             i18n_data,
+                             subscription_service,
+                             session,
+                             is_edit=False)
     else:
         i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
-        _ = lambda key, **kwargs: i18n.gettext(i18n_data.get("current_language"), key, **kw) if i18n else key
+        _ = lambda key, **kwargs: i18n.gettext(
+            i18n_data.get("current_language"), key, **kw) if i18n else key
         await callback.answer(_("main_menu_unknown_action"), show_alert=True)
