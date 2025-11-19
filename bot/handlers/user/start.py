@@ -28,23 +28,99 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 router = Router(name="user_start_router")
 
 
-async def send_main_menu(callback: CallbackQuery, settings, i18n_data):
+async def send_main_menu(target_event: Union[types.Message,
+                                             types.CallbackQuery],
+                         settings: Settings,
+                         i18n_data: dict,
+                         subscription_service: SubscriptionService,
+                         session: AsyncSession,
+                         is_edit: bool = False):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-    i18n = i18n_data.get("i18n_instance")
+    i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
+
+    user_id = target_event.from_user.id
+    user_full_name = hd.quote(target_event.from_user.full_name)
+
+    if not i18n:
+        logging.error(
+            f"i18n_instance missing in send_main_menu for user {user_id}")
+        err_msg_fallback = "Error: Language service unavailable. Please try again later."
+        if isinstance(target_event, types.CallbackQuery):
+            try:
+                await target_event.answer(err_msg_fallback, show_alert=True)
+            except Exception:
+                pass
+        elif isinstance(target_event, types.Message):
+            try:
+                await target_event.answer(err_msg_fallback)
+            except Exception:
+                pass
+        return
+
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # ❗ ВАЖНО: БЕЗ "Привет!"
-    caption = ""
+    show_trial_button_in_menu = False
+    if settings.TRIAL_ENABLED:
+        if hasattr(
+                subscription_service, 'has_had_any_subscription') and callable(
+                    getattr(subscription_service, 'has_had_any_subscription')):
+            if not await subscription_service.has_had_any_subscription(
+                    session, user_id):
+                show_trial_button_in_menu = True
+        else:
+            logging.error(
+                "Method has_had_any_subscription is missing in SubscriptionService for send_main_menu!"
+            )
 
-    keyboard = get_main_menu_inline_keyboard(current_lang, i18n, settings)
+    text = _(key="main_menu_greeting", user_name=user_full_name)
+    reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings,
+                                                 show_trial_button_in_menu)
 
-    # путь к фото
-    photo_path = Path(__file__).resolve().parent.parent.parent / "static" / "kaivpnlogo.png"
-    photo = FSInputFile(str(photo_path))
+    target_message_obj: Optional[types.Message] = None
+    if isinstance(target_event, types.Message):
+        target_message_obj = target_event
+    elif isinstance(target_event,
+                    types.CallbackQuery) and target_event.message:
+        target_message_obj = target_event.message
 
-    from bot.utils.edit_message import edit_photo_menu
-    await edit_photo_menu(callback, caption, keyboard, photo)
+    if not target_message_obj:
+        logging.error(
+            f"send_main_menu: target_message_obj is None for event from user {user_id}."
+        )
+        if isinstance(target_event, types.CallbackQuery):
+            await target_event.answer(_("error_displaying_menu"),
+                                      show_alert=True)
+        return
+
+    try:
+        if is_edit:
+            await target_message_obj.edit_text(text, reply_markup=reply_markup)
+        else:
+            await target_message_obj.answer(text, reply_markup=reply_markup)
+
+        if isinstance(target_event, types.CallbackQuery):
+            try:
+                await target_event.answer()
+            except Exception:
+                pass
+    except Exception as e_send_edit:
+        logging.warning(
+            f"Failed to send/edit main menu (user: {user_id}, is_edit: {is_edit}): {type(e_send_edit).__name__} - {e_send_edit}."
+        )
+        if is_edit and target_message_obj:
+            try:
+                await target_message_obj.answer(text, reply_markup=reply_markup)
+            except Exception as e_send_new:
+                logging.error(
+                    f"Also failed to send new main menu message for user {user_id}: {e_send_new}"
+                )
+        if isinstance(target_event, types.CallbackQuery):
+            try:
+                await target_event.answer(
+                    _("error_occurred_try_again") if is_edit else None)
+            except Exception:
+                pass
 
 
 async def ensure_required_channel_subscription(
