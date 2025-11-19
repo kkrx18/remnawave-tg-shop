@@ -103,7 +103,7 @@ async def create_referral_result(
         # Create message content (use same text as friend message)
         message_text = _(
             "referral_friend_message",
-            default="🚀 Привет! Попробуй этот VPN - быстрый, надёжный и доступный!\n\n"
+            default="🚀 Привет! Попробуй KaiVPNVPN - быстрый, надёжный и доступный!\n\n"
                    "🎁 По моей ссылке тебе дадут бонусные дни к подписке!\n\n{referral_link}",
             referral_link=referral_link
         )
