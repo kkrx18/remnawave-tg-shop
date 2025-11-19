@@ -8,8 +8,6 @@ from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
-from pathlib import Path
-from aiogram.types import FSInputFile, InputMediaPhoto, CallbackQuery
 
 from db.dal import user_dal
 from db.models import User
@@ -30,137 +28,25 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 router = Router(name="user_start_router")
 
 
-
-
-
-@router.callback_query(F.data.startswith("main_action:"))
-async def main_action_router(callback: CallbackQuery, state: FSMContext, session: AsyncSession, settings: Settings, i18n_data: dict):
-    
-    action = callback.data.split("main_action:")[1]
-
-    if action in ["back_to_main", "back_to_main_keep", "subscribe", "language", "referral", "apply_promo", "my_subscription", "request_trial"]:
-        return await send_main_menu(
-            callback,
-            data["settings"],
-            data["i18n_data"],
-            data["subscription_service"],
-            data["session"]
-        )
-
-
-    await callback.answer()
-
-
-async def send_main_menu(
-    event: Union[types.Message, types.CallbackQuery],
-    settings,
-    i18n_data: dict,
-    subscription_service,
-    session,
-    is_edit: bool = False
-):
+async def send_main_menu(callback: CallbackQuery, settings, i18n_data):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n = i18n_data.get("i18n_instance")
 
-    if not i18n:
-        return
-
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    user_full_name = hd.quote(event.from_user.full_name)
-    caption_text = _(key="main_menu_greeting", user_name=user_full_name)
+    # ❗ ВАЖНО: БЕЗ "Привет!"
+    caption = ""
 
     keyboard = get_main_menu_inline_keyboard(current_lang, i18n, settings)
 
-    bot = event.bot if hasattr(event, "bot") else event.message.bot
+    # путь к фото
+    photo_path = Path(__file__).resolve().parent.parent.parent / "static" / "kaivpnlogo.png"
+    photo = FSInputFile(str(photo_path))
 
-    # --- определяем chat_id и message_id ---
-    if isinstance(event, types.CallbackQuery):
-        chat_id = event.message.chat.id
-        message_id = event.message.message_id
-        is_callback = True
-    else:
-        chat_id = event.chat.id
-        message_id = None
-        is_callback = False
+    from bot.utils.edit_message import edit_photo_menu
+    await edit_photo_menu(callback, caption, keyboard, photo)
 
-    # --- путь к картинке ---
-    try:
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        static_path = base_dir / "static" / "kaivpnlogo.png"
-        photo = FSInputFile(str(static_path))
-    except Exception:
-        photo = None
 
-    # ==== ЕСЛИ МЫ РЕДАКТИРУЕМ, А СООБЩЕНИЕ ЯВЛЯЕТСЯ ФОТО ====
-    if is_edit and message_id:
-        try:
-            # пробуем заменить картинку + caption
-            media = InputMediaPhoto(
-                media=photo,
-                caption=caption_text
-            )
-
-            await bot.edit_message_media(
-                chat_id=chat_id,
-                message_id=message_id,
-                media=media,
-                reply_markup=keyboard
-            )
-
-            if is_callback:
-                await event.answer()
-
-            return
-        except Exception as e:
-            logging.warning(f"edit_message_media failed: {e}")
-
-            # пробуем хотя бы caption заменить
-            try:
-                await bot.edit_message_caption(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    caption=caption_text,
-                    reply_markup=keyboard
-                )
-
-                if is_callback:
-                    await event.answer()
-
-                return
-            except Exception as e2:
-                logging.warning(f"edit_caption failed: {e2}")
-
-    # ==== ЕСЛИ МЫ НЕ РЕДАКТИРУЕМ — отправляем НОВОЕ ФОТО ====
-    try:
-        await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo,
-            caption=caption_text,
-            reply_markup=keyboard
-        )
-
-        if is_callback:
-            await event.answer()
-
-    except Exception as e:
-        logging.error(f"send_photo failed: {e}")
-
-        # окончательный fallback → текстовое меню
-        try:
-            if isinstance(event, types.CallbackQuery):
-                await event.message.edit_text(
-                    caption_text,
-                    reply_markup=keyboard
-                )
-                await event.answer()
-            else:
-                await bot.send_message(chat_id, caption_text, reply_markup=keyboard)
-
-        except Exception as e2:
-            logging.error(f"final fallback failed: {e2}")
-    
-    
 async def ensure_required_channel_subscription(
         event: Union[types.Message, types.CallbackQuery],
         settings: Settings,
