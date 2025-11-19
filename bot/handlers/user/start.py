@@ -29,6 +29,21 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
+
+
+
+
+@router.callback_query(F.data.startswith("main_action:"))
+async def main_action_router(callback: CallbackQuery, state: FSMContext, session: AsyncSession, settings: Settings, i18n_data: dict):
+    
+    action = callback.data.split("main_action:")[1]
+
+    if action in ["back_to_main", "back_to_main_keep", "subscribe", "language", "referral", "apply_promo", "my_subscription", "request_trial"]:
+        return await send_main_menu(callback, settings, i18n_data)
+
+    await callback.answer()
+
+
 async def send_main_menu(
     event: Union[types.Message, types.CallbackQuery],
     settings,
