@@ -39,7 +39,14 @@ async def main_action_router(callback: CallbackQuery, state: FSMContext, session
     action = callback.data.split("main_action:")[1]
 
     if action in ["back_to_main", "back_to_main_keep", "subscribe", "language", "referral", "apply_promo", "my_subscription", "request_trial"]:
-        return await send_main_menu(callback, settings, i18n_data)
+        return await send_main_menu(
+            callback,
+            data["settings"],
+            data["i18n_data"],
+            data["subscription_service"],
+            data["session"]
+        )
+
 
     await callback.answer()
 
