@@ -29,130 +29,114 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
-STATIC_DIR_NAME = "static"
-STATIC_IMAGE_NAME = "kaivpnlogo.png"
-
-async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
-                         settings,
-                         i18n_data: dict,
-                         subscription_service,
-                         session,
-                         is_edit: bool = False):
+async def send_main_menu(
+    event: Union[types.Message, types.CallbackQuery],
+    settings,
+    i18n_data: dict,
+    subscription_service,
+    session,
+    is_edit: bool = False
+):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-    i18n: Optional[object] = i18n_data.get("i18n_instance")
+    i18n = i18n_data.get("i18n_instance")
 
     if not i18n:
-        logging.error("i18n_instance missing in send_main_menu")
-        err_msg_fallback = "Ошибка: служба языка недоступна. Попробуйте позже."
-        if isinstance(target_event, types.CallbackQuery):
-            try:
-                await target_event.answer(err_msg_fallback, show_alert=True)
-            except Exception:
-                pass
-        else:
-            try:
-                await target_event.answer(err_msg_fallback)
-            except Exception:
-                pass
         return
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    user_full_name = hd.quote(target_event.from_user.full_name)
-    text = _(key="main_menu_greeting", user_name=user_full_name)
+    user_full_name = hd.quote(event.from_user.full_name)
+    caption_text = _(key="main_menu_greeting", user_name=user_full_name)
 
-    reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
+    keyboard = get_main_menu_inline_keyboard(current_lang, i18n, settings)
 
-    # Определяем chat_id и message_id для редактирования
-    if isinstance(target_event, types.CallbackQuery):
-        if not target_event.message:
-            logging.error("CallbackQuery.message missing")
-            return
-        chat_id = target_event.message.chat.id
-        message_id = target_event.message.message_id
+    bot = event.bot if hasattr(event, "bot") else event.message.bot
+
+    # --- определяем chat_id и message_id ---
+    if isinstance(event, types.CallbackQuery):
+        chat_id = event.message.chat.id
+        message_id = event.message.message_id
+        is_callback = True
     else:
-        chat_id = target_event.chat.id
-        message_id = None  # нет редактирования для обычного сообщения
+        chat_id = event.chat.id
+        message_id = None
+        is_callback = False
 
-    bot = target_event.bot
-
-    # Попытка найти локальный файл
+    # --- путь к картинке ---
     try:
-        this_file = Path(__file__).resolve()
-        bot_dir = this_file.parent.parent.parent  # ../..
-        static_dir = bot_dir / STATIC_DIR_NAME
-        local_image_path = static_dir / STATIC_IMAGE_NAME
-    except Exception as e:
-        logging.exception(f"Не удалось вычислить путь к static: {e}")
-        local_image_path = None
+        base_dir = Path(__file__).resolve().parent.parent.parent
+        static_path = base_dir / "static" / "kaivpnlogo.png"
+        photo = FSInputFile(str(static_path))
+    except Exception:
+        photo = None
 
-    photo_obj = None
-    if local_image_path and local_image_path.exists():
+    # ==== ЕСЛИ МЫ РЕДАКТИРУЕМ, А СООБЩЕНИЕ ЯВЛЯЕТСЯ ФОТО ====
+    if is_edit and message_id:
         try:
-            photo_obj = FSInputFile(str(local_image_path))
-        except Exception:
-            photo_obj = str(local_image_path)
+            # пробуем заменить картинку + caption
+            media = InputMediaPhoto(
+                media=photo,
+                caption=caption_text
+            )
 
-    # 1) Если редактирование сообщения и есть photo_obj — используем edit_message_media
-    if is_edit and message_id and photo_obj:
-        try:
-            media = InputMediaPhoto(media=photo_obj, caption=text)
             await bot.edit_message_media(
-                media=media,
                 chat_id=chat_id,
                 message_id=message_id,
-                reply_markup=reply_markup
+                media=media,
+                reply_markup=keyboard
             )
-            if isinstance(target_event, types.CallbackQuery):
-                try:
-                    await target_event.answer()
-                except Exception:
-                    pass
-            return
-        except TelegramBadRequest as e:
-            logging.warning(f"edit_message_media failed, fallback to send_photo: {e}")
 
-    # 2) Отправляем новое сообщение с фото (если есть)
-    if photo_obj:
-        try:
-            await bot.send_photo(chat_id=chat_id, photo=photo_obj, reply_markup=reply_markup)
-            if isinstance(target_event, types.CallbackQuery):
-                try:
-                    await target_event.answer()
-                except Exception:
-                    pass
+            if is_callback:
+                await event.answer()
+
             return
         except Exception as e:
-            logging.exception(f"Ошибка при отправке локального фото: {e}")
+            logging.warning(f"edit_message_media failed: {e}")
 
-    # 3) Если локального фото нет — пробуем URL
-    image_url = None
+            # пробуем хотя бы caption заменить
+            try:
+                await bot.edit_message_caption(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    caption=caption_text,
+                    reply_markup=keyboard
+                )
+
+                if is_callback:
+                    await event.answer()
+
+                return
+            except Exception as e2:
+                logging.warning(f"edit_caption failed: {e2}")
+
+    # ==== ЕСЛИ МЫ НЕ РЕДАКТИРУЕМ — отправляем НОВОЕ ФОТО ====
     try:
-        image_url = i18n.gettext(current_lang, "main_menu_image")
-    except Exception:
-        image_url = getattr(settings, "MAIN_MENU_IMAGE", None)
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption_text,
+            reply_markup=keyboard
+        )
 
-    if image_url and isinstance(image_url, str) and image_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-        try:
-            await bot.send_photo(chat_id=chat_id, photo=image_url, reply_markup=reply_markup)
-            if isinstance(target_event, types.CallbackQuery):
-                try:
-                    await target_event.answer()
-                except Exception:
-                    pass
-            return
-        except Exception as e:
-            logging.exception(f"Ошибка при отправке фото по URL: {e}")
+        if is_callback:
+            await event.answer()
 
-    # 4) Фолбэк — просто текст
-    try:
-        if isinstance(target_event, types.CallbackQuery):
-            await target_event.message.edit_text(text=text, reply_markup=reply_markup)
-            await target_event.answer()
-        else:
-            await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
     except Exception as e:
-        logging.exception(f"Финальный фолбэк текста главного меню не удался: {e}")
+        logging.error(f"send_photo failed: {e}")
+
+        # окончательный fallback → текстовое меню
+        try:
+            if isinstance(event, types.CallbackQuery):
+                await event.message.edit_text(
+                    caption_text,
+                    reply_markup=keyboard
+                )
+                await event.answer()
+            else:
+                await bot.send_message(chat_id, caption_text, reply_markup=keyboard)
+
+        except Exception as e2:
+            logging.error(f"final fallback failed: {e2}")
     
     
 async def ensure_required_channel_subscription(
