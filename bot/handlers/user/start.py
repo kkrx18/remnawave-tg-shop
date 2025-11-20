@@ -33,7 +33,7 @@ router = Router(name="user_start_router")
 
 
 @router.callback_query(F.data == "main_action:about_us")
-async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
+async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str = None):
     """
     Обработчик для кнопки "О нас".
     Когда пользователь нажимает на кнопку "О нас", отображается информация
@@ -43,6 +43,10 @@ async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
     :param i18n_instance: экземпляр i18n, используемый для перевода текста.
     :param lang: строка, представляющая текущий язык пользователя.
     """
+    # Получаем текущий язык, если он не передан
+    if not lang:
+        lang = i18n_instance.get_language()  # или любое другое место, откуда можно получить язык
+
     # Локализация текста
     _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
 
@@ -54,6 +58,7 @@ async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
 
     # Отправляем текст "О нас" с кнопкой "Назад"
     await query.message.edit_text(about_us_text, reply_markup=back_markup)
+
 
 async def send_main_menu(target_event: Union[types.Message,
                                              types.CallbackQuery],
