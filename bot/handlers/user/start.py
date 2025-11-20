@@ -567,6 +567,32 @@ async def verify_channel_subscription_callback(
                          is_edit=bool(callback.message))
 
 
+@router.callback_query(F.data == "main_action:about_us")
+async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
+    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+    i18n: JsonI18n = i18n_data.get("i18n_instance")
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+
+    # Здесь можно добавить текст с информацией "О нас"
+    text = _("about_us_text")  # Текст, который ты хочешь отправить пользователю
+
+    # Создание кнопки "Назад"
+    back_button = InlineKeyboardButton(
+        text=_("back_to_main_menu_button"),  # Кнопка "Назад"
+        callback_data="main_action:back_to_main"
+    )
+    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
+
+    # Отправка текста и клавиатуры с кнопкой "Назад"
+    await callback.message.edit_text(text, reply_markup=back_markup)
+
+    # Ответ на запрос (необходим для предотвращения ошибки в Telegram API)
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
 @router.message(Command("language"))
 @router.callback_query(F.data == "main_action:language")
 async def language_command_handler(
@@ -663,6 +689,24 @@ async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
         )
     )
 
+
+@router.callback_query(F.data == "main_action:back_to_main")
+async def back_to_main_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
+    # Логика для возврата в основное меню
+    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+    i18n: JsonI18n = i18n_data.get("i18n_instance")
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+
+    # Здесь создаем клавиатуру для основного меню
+    reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
+
+    # Отправка основного меню
+    await callback.message.edit_text(_("main_menu_greeting", user_name=callback.from_user.full_name), reply_markup=reply_markup)
+
+    try:
+        await callback.answer()  # Ответ на запрос
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("main_action:"))
