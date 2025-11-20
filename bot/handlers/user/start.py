@@ -34,7 +34,7 @@ router = Router(name="user_start_router")
 router = Router()
 
 # Путь к локальной папке для хранения изображений
-IMAGE_PATH = "bot/static/mainmenu.png.png"
+IMAGE_PATH = "bot/static/kaivpnlogo.png"
 
 # Если файл не существует, скачиваем его
 def download_image(image_url: str, save_path: str):
