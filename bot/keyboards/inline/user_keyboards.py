@@ -59,6 +59,13 @@ def get_main_menu_inline_keyboard(
         builder.row(
             InlineKeyboardButton(text=_(key="menu_terms_button"),
                                  url=settings.TERMS_OF_SERVICE_URL))
+        
+    builder.row(
+        InlineKeyboardButton(
+            text=_(key="about_us"),  # Текст кнопки "О нас"
+            callback_data="main_action:about_us"  # Привязываем callback
+        )
+    )
 
     return builder.as_markup()
 
