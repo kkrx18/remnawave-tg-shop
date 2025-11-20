@@ -36,19 +36,6 @@ router = Router()
 # Путь к локальной папке для хранения изображений
 IMAGE_PATH = "bot/static/kaivpnlogo.png"
 
-# Если файл не существует, скачиваем его
-def download_image(image_url: str, save_path: str):
-    try:
-        response = requests.get(image_url)
-        with open(save_path, 'wb') as file:
-            file.write(response.content)
-    except Exception as e:
-        print(f"Ошибка при скачивании изображения: {e}")
-
-# Если изображение не скачано, скачиваем его
-if not os.path.exists(IMAGE_PATH):
-    download_image("https://cond.kaivpn.ru/img/kaivpnlogo.png", IMAGE_PATH)
-
 @router.callback_query(F.data == "main_action:about_us")
 async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
@@ -73,14 +60,18 @@ async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: di
     )
     back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
 
-    # Отправка изображения
+    # Отправка изображения с использованием InputFile
     try:
-        # Отправляем изображение с подписью и кнопками
-        with open(IMAGE_PATH, 'rb') as photo:
-            await callback.message.answer_photo(photo, caption=text, reply_markup=back_markup, parse_mode="HTML")
+        # Открываем изображение с помощью InputFile
+        photo = InputFile(IMAGE_PATH)
 
-    except TelegramAPIError as e:
-        print(f"Ошибка при отправке изображения: {e}")
+        # Отправляем изображение с подписью и кнопками
+        await callback.message.answer_photo(photo, caption=text, reply_markup=back_markup, parse_mode="HTML")
+
+    except FileNotFoundError:
+        await callback.message.answer("Изображение не найдено.")
+    except Exception as e:
+        await callback.message.answer(f"Произошла ошибка: {str(e)}")
 
     # Ответ на callback
     try:
