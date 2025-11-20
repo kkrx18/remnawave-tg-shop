@@ -8,6 +8,7 @@ from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from db.dal import user_dal
 from db.models import User
@@ -16,6 +17,7 @@ from bot.keyboards.inline.user_keyboards import (
     get_main_menu_inline_keyboard,
     get_language_selection_keyboard,
     get_channel_subscription_keyboard,
+    get_back_to_main_menu_markup,
 )
 from bot.services.subscription_service import SubscriptionService
 from bot.services.panel_api_service import PanelApiService
@@ -27,6 +29,31 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
 
+
+
+
+@router.callback_query(F.data == "main_action:about_us")
+async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
+    """
+    Обработчик для кнопки "О нас".
+    Когда пользователь нажимает на кнопку "О нас", отображается информация
+    о компании и кнопка "Назад", которая возвращает в главное меню.
+    
+    :param query: CallbackQuery — объект запроса, содержащий данные о нажатой кнопке.
+    :param i18n_instance: экземпляр i18n, используемый для перевода текста.
+    :param lang: строка, представляющая текущий язык пользователя.
+    """
+    # Локализация текста
+    _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
+
+    # Текст, который будет отправлен пользователю. Это может быть описание компании.
+    about_us_text = _(key="about_us_text")  # Текст "О нас" из локализаций (ru.json или en.json)
+
+    # Создаем клавиатуру с кнопкой "Назад"
+    back_markup = get_back_to_main_menu_markup(lang, i18n_instance)
+
+    # Отправляем текст "О нас" с кнопкой "Назад"
+    await query.message.edit_text(about_us_text, reply_markup=back_markup)
 
 async def send_main_menu(target_event: Union[types.Message,
                                              types.CallbackQuery],
@@ -646,6 +673,22 @@ async def select_language_callback_handler(
                          subscription_service,
                          session,
                          is_edit=True)
+    
+    
+@router.callback_query(F.data == "main_action:about_us")
+async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
+    _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
+    
+    about_us_text = _(key="about_us_text")  # Текст "О нас" из локализаций
+
+    # Отправляем текст "О нас" и кнопку "Назад"
+    await query.message.edit_text(
+        about_us_text,
+        reply_markup=InlineKeyboardMarkup().add(
+            InlineKeyboardButton(text=_(key="back_to_main_menu_button"), callback_data="main_action:back_to_main")
+        )
+    )
+
 
 
 @router.callback_query(F.data.startswith("main_action:"))

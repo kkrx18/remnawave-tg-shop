@@ -58,16 +58,13 @@ def get_main_menu_inline_keyboard(
     if settings.TERMS_OF_SERVICE_URL:
         builder.row(
             InlineKeyboardButton(text=_(key="menu_terms_button"),
-                                 url=settings.TERMS_OF_SERVICE_URL))
-        
-    builder.row(
-        InlineKeyboardButton(
-            text=_(key="about_us"),  # Текст кнопки "О нас"
-            callback_data="main_action:about_us"  # Привязываем callback
+                                 url=settings.TERMS_OF_SERVICE_URL),
+            InlineKeyboardButton(text=_(key="about_us"),  # Текст кнопки "О нас"
+                                 callback_data="main_action:about_us")
         )
-    )
 
     return builder.as_markup()
+
 
 
 def get_language_selection_keyboard(i18n_instance,
