@@ -30,7 +30,6 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 
 router = Router(name="user_start_router")
-router = Router()
 
 # Путь к локальной папке для хранения изображений
 IMAGE_PATH = "bot/static/mainmenu.png"
