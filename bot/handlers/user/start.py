@@ -8,7 +8,6 @@ from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from db.dal import user_dal
 from db.models import User
@@ -28,32 +27,6 @@ from bot.middlewares.i18n import JsonI18n
 from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 
 router = Router(name="user_start_router")
-
-
-
-
-@router.callback_query(F.data == "main_action:about_us")
-async def about_us_handler(query: CallbackQuery, i18n_instance):
-    """
-    Обработчик для кнопки "О нас".
-    Когда пользователь нажимает на кнопку "О нас", отображается информация
-    о компании и кнопка "Назад", которая возвращает в главное меню.
-    
-    :param query: CallbackQuery — объект запроса, содержащий данные о нажатой кнопке.
-    :param i18n_instance: экземпляр i18n, используемый для перевода текста.
-    """
-    # Локализация текста "О нас"
-    _ = i18n_instance.gettext  # Для использования i18n для перевода текста
-
-    # Текст "О нас" (если в файле json есть такая строка)
-    about_us_text = _(key="about_us_text")  # Текст из локализаций
-
-    # Создаем клавиатуру с кнопкой "Назад"
-    back_markup = get_back_to_main_menu_markup(lang="ru", i18n_instance=i18n_instance)  # Можно указать язык явно
-
-    # Отправляем текст с кнопкой "Назад"
-    await query.message.edit_text(about_us_text, reply_markup=back_markup)
-
 
 async def send_main_menu(target_event: Union[types.Message,
                                              types.CallbackQuery],
