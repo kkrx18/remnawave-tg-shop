@@ -33,7 +33,7 @@ router = Router(name="user_start_router")
 router = Router()
 
 # Путь к локальной папке для хранения изображений
-IMAGE_PATH = "bot/static/kaivpnlogo.png"
+IMAGE_PATH = "bot/static/mainmenu.png"
 
 @router.callback_query(F.data == "main_action:about_us")
 async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
