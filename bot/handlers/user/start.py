@@ -7,7 +7,6 @@ from aiogram.fsm.context import FSMContext
 from typing import Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 
 import os
 import requests
