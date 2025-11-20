@@ -33,7 +33,7 @@ router = Router(name="user_start_router")
 
 
 @router.callback_query(F.data == "main_action:about_us")
-async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str = None):
+async def about_us_handler(query: CallbackQuery, i18n_instance):
     """
     Обработчик для кнопки "О нас".
     Когда пользователь нажимает на кнопку "О нас", отображается информация
@@ -41,22 +41,17 @@ async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str = None
     
     :param query: CallbackQuery — объект запроса, содержащий данные о нажатой кнопке.
     :param i18n_instance: экземпляр i18n, используемый для перевода текста.
-    :param lang: строка, представляющая текущий язык пользователя.
     """
-    # Получаем текущий язык, если он не передан
-    if not lang:
-        lang = i18n_instance.get_language()  # или любое другое место, откуда можно получить язык
+    # Локализация текста "О нас"
+    _ = i18n_instance.gettext  # Для использования i18n для перевода текста
 
-    # Локализация текста
-    _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
-
-    # Текст, который будет отправлен пользователю. Это может быть описание компании.
-    about_us_text = _(key="about_us_text")  # Текст "О нас" из локализаций (ru.json или en.json)
+    # Текст "О нас" (если в файле json есть такая строка)
+    about_us_text = _(key="about_us_text")  # Текст из локализаций
 
     # Создаем клавиатуру с кнопкой "Назад"
-    back_markup = get_back_to_main_menu_markup(lang, i18n_instance)
+    back_markup = get_back_to_main_menu_markup(lang="ru", i18n_instance=i18n_instance)  # Можно указать язык явно
 
-    # Отправляем текст "О нас" с кнопкой "Назад"
+    # Отправляем текст с кнопкой "Назад"
     await query.message.edit_text(about_us_text, reply_markup=back_markup)
 
 
