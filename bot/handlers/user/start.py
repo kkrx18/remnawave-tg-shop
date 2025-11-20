@@ -62,7 +62,7 @@ async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: di
 
     # Отправка изображения с использованием InputFile
     try:
-        # Открываем изображение с помощью InputFile
+        # Передача пути к изображению
         photo = InputFile(IMAGE_PATH)
 
         # Отправляем изображение с подписью и кнопками
