@@ -573,24 +573,33 @@ async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: di
     i18n: JsonI18n = i18n_data.get("i18n_instance")
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Здесь можно добавить текст с информацией "О нас"
-    text = _("about_us_text")  # Текст, который ты хочешь отправить пользователю
+    # Текст с гиперссылками
+    text = _(
+        "about_us_text",
+        default="""
+            С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
+            <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
+            <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
+            и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
+        """
+    )
 
-    # Создание кнопки "Назад"
+    # Кнопка "Назад"
     back_button = InlineKeyboardButton(
         text=_("back_to_main_menu_button"),  # Кнопка "Назад"
         callback_data="main_action:back_to_main"
     )
     back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
 
-    # Отправка текста и клавиатуры с кнопкой "Назад"
-    await callback.message.edit_text(text, reply_markup=back_markup)
+    # Отправка текста с гиперссылками и кнопкой "Назад"
+    await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
 
-    # Ответ на запрос (необходим для предотвращения ошибки в Telegram API)
+    # Ответ на callback
     try:
         await callback.answer()
     except Exception:
         pass
+
 
 
 @router.message(Command("language"))
