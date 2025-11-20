@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 
+import os
+import requests
+
 from db.dal import user_dal
 from db.models import User
 
@@ -28,6 +31,63 @@ from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 router = Router(name="user_start_router")
+router = Router()
+
+# Путь к локальной папке для хранения изображений
+IMAGE_PATH = "bot/static/mainmenu.png.png"
+
+# Если файл не существует, скачиваем его
+def download_image(image_url: str, save_path: str):
+    try:
+        response = requests.get(image_url)
+        with open(save_path, 'wb') as file:
+            file.write(response.content)
+    except Exception as e:
+        print(f"Ошибка при скачивании изображения: {e}")
+
+# Если изображение не скачано, скачиваем его
+if not os.path.exists(IMAGE_PATH):
+    download_image("https://cond.kaivpn.ru/img/kaivpnlogo.png", IMAGE_PATH)
+
+@router.callback_query(F.data == "main_action:about_us")
+async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
+    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+    i18n: JsonI18n = i18n_data.get("i18n_instance")
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+
+    # Текст с гиперссылками
+    text = _(
+        "about_us_text",
+        default=""" 
+            С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
+            <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
+            <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
+            и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
+        """
+    )
+
+    # Кнопка "Назад"
+    back_button = InlineKeyboardButton(
+        text=_("back_to_main_menu_button"),  # Кнопка "Назад"
+        callback_data="main_action:back_to_main"
+    )
+    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
+
+    # Отправка изображения
+    try:
+        # Отправляем изображение с подписью и кнопками
+        with open(IMAGE_PATH, 'rb') as photo:
+            await callback.message.answer_photo(photo, caption=text, reply_markup=back_markup, parse_mode="HTML")
+
+    except TelegramAPIError as e:
+        print(f"Ошибка при отправке изображения: {e}")
+
+    # Ответ на callback
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
 
 async def send_main_menu(target_event: Union[types.Message,
                                              types.CallbackQuery],
@@ -567,38 +627,38 @@ async def verify_channel_subscription_callback(
                          is_edit=bool(callback.message))
 
 
-@router.callback_query(F.data == "main_action:about_us")
-async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
-    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-    i18n: JsonI18n = i18n_data.get("i18n_instance")
-    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+# @router.callback_query(F.data == "main_action:about_us")
+# async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
+#     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+#     i18n: JsonI18n = i18n_data.get("i18n_instance")
+#     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Текст с гиперссылками
-    text = _(
-        "about_us_text",
-        default="""
-            С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
-            <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
-            <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
-            и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
-        """
-    )
+#     # Текст с гиперссылками
+#     text = _(
+#         "about_us_text",
+#         default="""
+#             С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
+#             <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
+#             <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
+#             и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
+#         """
+#     )
 
-    # Кнопка "Назад"
-    back_button = InlineKeyboardButton(
-        text=_("back_to_main_menu_button"),  # Кнопка "Назад"
-        callback_data="main_action:back_to_main"
-    )
-    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
+#     # Кнопка "Назад"
+#     back_button = InlineKeyboardButton(
+#         text=_("back_to_main_menu_button"),  # Кнопка "Назад"
+#         callback_data="main_action:back_to_main"
+#     )
+#     back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
 
-    # Отправка текста с гиперссылками и кнопкой "Назад"
-    await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
+#     # Отправка текста с гиперссылками и кнопкой "Назад"
+#     await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
 
-    # Ответ на callback
-    try:
-        await callback.answer()
-    except Exception:
-        pass
+#     # Ответ на callback
+#     try:
+#         await callback.answer()
+#     except Exception:
+#         pass
 
 
 
