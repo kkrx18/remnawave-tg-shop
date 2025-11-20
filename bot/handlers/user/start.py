@@ -31,53 +31,6 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 
 router = Router(name="user_start_router")
 
-# Путь к локальной папке для хранения изображений
-IMAGE_PATH = "bot/static/mainmenu.png"
-
-@router.callback_query(F.data == "main_action:about_us")
-async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
-    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-    i18n: JsonI18n = i18n_data.get("i18n_instance")
-    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
-
-    # Текст с гиперссылками
-    text = _(
-        "about_us_text",
-        default=""" 
-            С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
-            <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
-            <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
-            и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
-        """
-    )
-
-    # Кнопка "Назад"
-    back_button = InlineKeyboardButton(
-        text=_("back_to_main_menu_button"),  # Кнопка "Назад"
-        callback_data="main_action:back_to_main"
-    )
-    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
-
-    # Отправка изображения с использованием InputFile
-    try:
-        # Создание объекта InputFile с использованием пути
-        photo = InputFile(IMAGE_PATH)
-
-        # Отправляем изображение с подписью и кнопками
-        await callback.message.answer_photo(photo, caption=text, reply_markup=back_markup, parse_mode="HTML")
-
-    except FileNotFoundError:
-        await callback.message.answer("Изображение не найдено.")
-    except Exception as e:
-        await callback.message.answer(f"Произошла ошибка: {str(e)}")
-
-    # Ответ на callback
-    try:
-        await callback.answer()
-    except Exception:
-        pass
-
-
 async def send_main_menu(target_event: Union[types.Message,
                                              types.CallbackQuery],
                          settings: Settings,
@@ -616,38 +569,38 @@ async def verify_channel_subscription_callback(
                          is_edit=bool(callback.message))
 
 
-# @router.callback_query(F.data == "main_action:about_us")
-# async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
-#     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
-#     i18n: JsonI18n = i18n_data.get("i18n_instance")
-#     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+@router.callback_query(F.data == "main_action:about_us")
+async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
+    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+    i18n: JsonI18n = i18n_data.get("i18n_instance")
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-#     # Текст с гиперссылками
-#     text = _(
-#         "about_us_text",
-#         default="""
-#             С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
-#             <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
-#             <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
-#             и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
-#         """
-#     )
+    # Текст с гиперссылками
+    text = _(
+        "about_us_text",
+        default="""
+            С использованием нашего VPN-сервиса вы соглашаетесь с нашими 
+            <a href="https://cond.kaivpn.ru/agreement.html">Пользовательским соглашением</a>, 
+            <a href="https://cond.kaivpn.ru/privacy-policy.html">Политикой конфиденциальности</a> 
+            и <a href="https://cond.kaivpn.ru/use-policy.html">Политикой использования</a>.
+        """
+    )
 
-#     # Кнопка "Назад"
-#     back_button = InlineKeyboardButton(
-#         text=_("back_to_main_menu_button"),  # Кнопка "Назад"
-#         callback_data="main_action:back_to_main"
-#     )
-#     back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
+    # Кнопка "Назад"
+    back_button = InlineKeyboardButton(
+        text=_("back_to_main_menu_button"),  # Кнопка "Назад"
+        callback_data="main_action:back_to_main"
+    )
+    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
 
-#     # Отправка текста с гиперссылками и кнопкой "Назад"
-#     await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
+    # Отправка текста с гиперссылками и кнопкой "Назад"
+    await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
 
-#     # Ответ на callback
-#     try:
-#         await callback.answer()
-#     except Exception:
-#         pass
+    # Ответ на callback
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
 
 
