@@ -58,15 +58,30 @@ async def display_subscription_options(event: Union[types.Message, types.Callbac
         return
 
     if isinstance(event, types.CallbackQuery):
-        try:
-            await target_message_obj.edit_text(text_content, reply_markup=reply_markup)
-        except Exception:
-            await target_message_obj.answer(text_content, reply_markup=reply_markup)
+        # When editing from a callback, attempt to edit the caption if the current message is a photo
+        msg = target_message_obj
+        if getattr(msg, "photo", None):
+            try:
+                await msg.edit_caption(text_content, reply_markup=reply_markup)
+            except Exception:
+                # Fallback to edit_text
+                try:
+                    await msg.edit_text(text_content, reply_markup=reply_markup)
+                except Exception:
+                    # As a last resort send a new message
+                    await msg.answer(text_content, reply_markup=reply_markup)
+        else:
+            try:
+                await msg.edit_text(text_content, reply_markup=reply_markup)
+            except Exception:
+                await msg.answer(text_content, reply_markup=reply_markup)
+        # Always answer the callback to stop the loading spinner
         try:
             await event.answer()
         except Exception:
             pass
     else:
+        # For non-callback messages, simply send a new message
         await target_message_obj.answer(text_content, reply_markup=reply_markup)
 
 
@@ -249,13 +264,21 @@ async def my_subscription_command_handler(
     markup = InlineKeyboardMarkup(inline_keyboard=kb)
 
     if isinstance(event, types.CallbackQuery):
+        # Answer the callback
         try:
             await event.answer()
         except Exception:
             pass
+        # Attempt to update caption if current message contains a photo
         try:
-            await event.message.edit_text(text + tribute_hint, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
+            msg = event.message
+            content = text + tribute_hint
+            if getattr(msg, "photo", None):
+                await msg.edit_caption(content, reply_markup=markup, parse_mode="HTML")
+            else:
+                await msg.edit_text(content, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
         except Exception:
+            # Fallback: send new message
             await bot.send_message(
                 chat_id=target.chat.id,
                 text=text + tribute_hint,
@@ -363,13 +386,20 @@ async def my_devices_command_handler(
     markup = InlineKeyboardMarkup(inline_keyboard=kb)
 
     if isinstance(event, types.CallbackQuery):
+        # Answer callback
         try:
             await event.answer()
         except Exception:
             pass
+        # Try to edit caption if message has photo
         try:
-            await event.message.edit_text(text, reply_markup=markup)
+            msg = event.message
+            if getattr(msg, "photo", None):
+                await msg.edit_caption(text, reply_markup=markup)
+            else:
+                await msg.edit_text(text, reply_markup=markup)
         except Exception:
+            # Fallback: send new message
             await event.message.answer(text, reply_markup=markup)
     else:
         await target.answer(text, reply_markup=markup)

@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
 import os
-import requests
 
 from db.dal import user_dal
 from db.models import User
@@ -27,103 +26,216 @@ from bot.services.promo_code_service import PromoCodeService
 from config.settings import Settings
 from bot.middlewares.i18n import JsonI18n
 from bot.utils.text_sanitizer import sanitize_username, sanitize_display_name
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InputFile,
+    FSInputFile,
+    InputMediaPhoto,
+)
 
 router = Router(name="user_start_router")
 
-async def send_main_menu(target_event: Union[types.Message,
-                                             types.CallbackQuery],
+async def reply_or_edit(
+    callback: types.CallbackQuery,
+    text: str,
+    *,
+    reply_markup: Optional[types.InlineKeyboardMarkup] = None,
+    as_caption: bool = True,
+    parse_mode: Optional[str] = None,
+    allow_web_page_preview: Optional[bool] = None,
+) -> Optional[types.Message]:
+    """
+    Helper to update an existing callback message gracefully.
+
+    - If `as_caption` is True and the current message contains media (photo), edit the caption.
+    - Otherwise try to edit the text.
+    - If editing fails (message not modified or markup change not allowed), send a new message and delete the old one.
+
+    Returns the resulting message object or None.
+    """
+    if not callback or not callback.message:
+        # Lost message context, send a new message
+        return await callback.bot.send_message(chat_id=callback.from_user.id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+    msg = callback.message
+
+    # Attempt to edit caption if media and requested as_caption
+    if as_caption and getattr(msg, "photo", None):
+        try:
+            await msg.edit_caption(caption=text, reply_markup=reply_markup)
+            return msg
+        except Exception as e:
+            logging.debug("edit_caption failed: %s", e)
+
+    # Attempt to edit text
+    try:
+        await msg.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode, disable_web_page_preview=not allow_web_page_preview)
+        return msg
+    except Exception as e:
+        logging.debug("edit_text failed: %s", e)
+
+    # Fallback: send new message and delete old
+    try:
+        new_msg = await callback.bot.send_message(chat_id=callback.from_user.id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        try:
+            await msg.delete()
+        except Exception as e_del:
+            logging.debug("Could not delete old message after fallback send: %s", e_del)
+        return new_msg
+    except Exception as e_send:
+        logging.exception("Failed to send fallback message for user %s: %s", callback.from_user.id, e_send)
+        return None
+
+
+async def send_main_menu(target_event: Union[types.Message, types.CallbackQuery],
                          settings: Settings,
                          i18n_data: dict,
                          subscription_service: SubscriptionService,
                          session: AsyncSession,
-                         is_edit: bool = False):
+                         is_edit: bool = False) -> None:
+    """
+    Send or edit the main menu as a photo with inline buttons.
+
+    When editing (is_edit=True), attempt to edit the caption of the existing photo rather than sending a new message.
+    Falls back to sending a new photo or text if editing fails or the photo file is missing.
+    """
     current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
     i18n: Optional[JsonI18n] = i18n_data.get("i18n_instance")
 
-    user_id = target_event.from_user.id
-    user_full_name = hd.quote(target_event.from_user.full_name)
-
+    # If i18n missing, fallback to simple text
     if not i18n:
-        logging.error(
-            f"i18n_instance missing in send_main_menu for user {user_id}")
-        err_msg_fallback = "Error: Language service unavailable. Please try again later."
+        logging.error("i18n_instance missing in send_main_menu")
+        fallback = "Menu"
         if isinstance(target_event, types.CallbackQuery):
-            try:
-                await target_event.answer(err_msg_fallback, show_alert=True)
-            except Exception:
-                pass
-        elif isinstance(target_event, types.Message):
-            try:
-                await target_event.answer(err_msg_fallback)
-            except Exception:
-                pass
+            if target_event.message:
+                await target_event.message.answer(fallback)
+            await target_event.answer()
+        else:
+            await target_event.answer(fallback)
         return
-
 
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
+    user = target_event.from_user
+    user_full_name = hd.quote(user.full_name)
+    caption_text = _(key="main_menu_greeting", user_name=user_full_name)
+
+    # Determine if trial button should be shown
     show_trial_button_in_menu = False
-    if settings.TRIAL_ENABLED:
-        if hasattr(
-                subscription_service, 'has_had_any_subscription') and callable(
-                    getattr(subscription_service, 'has_had_any_subscription')):
-            if not await subscription_service.has_had_any_subscription(
-                    session, user_id):
+    try:
+        if settings.TRIAL_ENABLED and hasattr(subscription_service, "has_had_any_subscription"):
+            if not await subscription_service.has_had_any_subscription(session, user.id):
                 show_trial_button_in_menu = True
-        else:
-            logging.error(
-                "Method has_had_any_subscription is missing in SubscriptionService for send_main_menu!"
-            )
+    except Exception:
+        logging.exception("Error checking trial eligibility for user %s", user.id)
 
-    text = _(key="main_menu_greeting", user_name=user_full_name)
-    reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings,
-                                                 show_trial_button_in_menu)
+    reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings, show_trial_button_in_menu)
 
-    target_message_obj: Optional[types.Message] = None
-    if isinstance(target_event, types.Message):
-        target_message_obj = target_event
-    elif isinstance(target_event,
-                    types.CallbackQuery) and target_event.message:
-        target_message_obj = target_event.message
+    # Path to the main menu image
+    MAIN_MENU_IMAGE_PATH = "bot/static/mainmenu.png"
 
-    if not target_message_obj:
-        logging.error(
-            f"send_main_menu: target_message_obj is None for event from user {user_id}."
-        )
-        if isinstance(target_event, types.CallbackQuery):
-            await target_event.answer(_("error_displaying_menu"),
-                                      show_alert=True)
-        return
+    # Determine the message object
+    message_obj: Optional[types.Message] = None
+    if isinstance(target_event, types.CallbackQuery):
+        message_obj = target_event.message
+    elif isinstance(target_event, types.Message):
+        message_obj = target_event
+
+    # Check file exists
+    has_image = os.path.isfile(MAIN_MENU_IMAGE_PATH) and os.access(MAIN_MENU_IMAGE_PATH, os.R_OK)
 
     try:
-        if is_edit:
-            await target_message_obj.edit_text(text, reply_markup=reply_markup)
+        if has_image:
+            fsfile = FSInputFile(MAIN_MENU_IMAGE_PATH)
+            # Editing existing message
+            if is_edit and message_obj:
+                try:
+                    # If current message has photo, edit caption
+                    if getattr(message_obj, "photo", None):
+                        await message_obj.edit_caption(caption=caption_text, reply_markup=reply_markup)
+                    else:
+                        # Replace media entirely if not currently a photo
+                        media = InputMediaPhoto(media=fsfile, caption=caption_text)
+                        await message_obj.edit_media(media=media, reply_markup=reply_markup)
+                except Exception as e_edit:
+                    logging.warning(
+                        "Failed to edit existing main menu (user %s): %s. Falling back to send new photo.",
+                        user.id,
+                        e_edit,
+                    )
+                    # Send new photo
+                    try:
+                        if isinstance(target_event, types.CallbackQuery) and target_event.message:
+                            await target_event.message.answer_photo(fsfile, caption=caption_text, reply_markup=reply_markup)
+                        elif isinstance(target_event, types.Message):
+                            await target_event.answer_photo(fsfile, caption=caption_text, reply_markup=reply_markup)
+                        else:
+                            bot_inst = getattr(target_event, "bot", None)
+                            if bot_inst:
+                                await bot_inst.send_photo(chat_id=user.id, photo=fsfile, caption=caption_text, reply_markup=reply_markup)
+                    except Exception as e_send:
+                        logging.error("Fallback send photo failed for user %s: %s", user.id, e_send)
+            else:
+                # New message with photo
+                if isinstance(target_event, types.CallbackQuery) and target_event.message:
+                    try:
+                        await target_event.message.answer_photo(fsfile, caption=caption_text, reply_markup=reply_markup)
+                    except Exception as e:
+                        logging.warning("answer_photo in message context failed: %s. Trying direct send.", e)
+                        try:
+                            await target_event.bot.send_photo(chat_id=user.id, photo=fsfile, caption=caption_text, reply_markup=reply_markup)
+                        except Exception as e2:
+                            logging.error("Direct send_photo failed for user %s: %s", user.id, e2)
+                elif isinstance(target_event, types.Message):
+                    try:
+                        await target_event.answer_photo(fsfile, caption=caption_text, reply_markup=reply_markup)
+                    except Exception as e:
+                        logging.error("answer_photo failed for user %s: %s", user.id, e)
+                else:
+                    bot_inst = getattr(target_event, "bot", None)
+                    if bot_inst:
+                        try:
+                            await bot_inst.send_photo(chat_id=user.id, photo=fsfile, caption=caption_text, reply_markup=reply_markup)
+                        except Exception as e:
+                            logging.error("Fallback send_photo failed for user %s: %s", user.id, e)
         else:
-            await target_message_obj.answer(text, reply_markup=reply_markup)
+            # If image missing, fallback to text
+            logging.error("Main menu image missing or unreadable at %s", MAIN_MENU_IMAGE_PATH)
+            if message_obj:
+                try:
+                    await message_obj.edit_text(caption_text, reply_markup=reply_markup)
+                except Exception:
+                    try:
+                        await message_obj.answer(caption_text, reply_markup=reply_markup)
+                    except Exception as e:
+                        logging.error("Fallback text send failed for user %s: %s", user.id, e)
+            else:
+                if isinstance(target_event, types.CallbackQuery):
+                    await target_event.answer(caption_text, show_alert=False)
+                else:
+                    await target_event.answer(caption_text, reply_markup=reply_markup)
+    except Exception as e:
+        logging.exception("Unhandled error in send_main_menu for user %s: %s", getattr(user, "id", "unknown"), e)
+        # Final fallback — send text
+        try:
+            if message_obj:
+                await message_obj.answer(caption_text, reply_markup=reply_markup)
+            else:
+                if isinstance(target_event, types.CallbackQuery):
+                    await target_event.answer(caption_text, show_alert=False)
+                else:
+                    await target_event.answer(caption_text, reply_markup=reply_markup)
+        except Exception:
+            logging.exception("Also failed to send fallback main menu text.")
 
-        if isinstance(target_event, types.CallbackQuery):
-            try:
-                await target_event.answer()
-            except Exception:
-                pass
-    except Exception as e_send_edit:
-        logging.warning(
-            f"Failed to send/edit main menu (user: {user_id}, is_edit: {is_edit}): {type(e_send_edit).__name__} - {e_send_edit}."
-        )
-        if is_edit and target_message_obj:
-            try:
-                await target_message_obj.answer(text, reply_markup=reply_markup)
-            except Exception as e_send_new:
-                logging.error(
-                    f"Also failed to send new main menu message for user {user_id}: {e_send_new}"
-                )
-        if isinstance(target_event, types.CallbackQuery):
-            try:
-                await target_event.answer(
-                    _("error_occurred_try_again") if is_edit else None)
-            except Exception:
-                pass
+    # Answer callback to stop loading state
+    if isinstance(target_event, types.CallbackQuery):
+        try:
+            await target_event.answer()
+        except Exception:
+            pass
 
 
 async def ensure_required_channel_subscription(
@@ -593,10 +705,17 @@ async def about_us_callback_handler(callback: types.CallbackQuery, i18n_data: di
     )
     back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
 
-    # Отправка текста с гиперссылками и кнопкой "Назад"
-    await callback.message.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
-
-    # Ответ на callback
+    # Try to edit caption if the current message contains a photo; otherwise edit text
+    try:
+        msg = callback.message
+        if getattr(msg, "photo", None):
+            await msg.edit_caption(text, reply_markup=back_markup, parse_mode="HTML")
+        else:
+            await msg.edit_text(text, reply_markup=back_markup, parse_mode="HTML")
+    except Exception:
+        # Fallback: send a new message
+        await callback.message.answer(text, reply_markup=back_markup, parse_mode="HTML")
+    # Answer callback to stop spinner
     try:
         await callback.answer()
     except Exception:
@@ -629,15 +748,20 @@ async def language_command_handler(
     if isinstance(event, types.CallbackQuery):
         if event.message:
             try:
-                await event.message.edit_text(text_to_send,
-                                              reply_markup=reply_markup)
+                msg = event.message
+                # Edit caption if message has photo, else edit text
+                if getattr(msg, "photo", None):
+                    await msg.edit_caption(text_to_send, reply_markup=reply_markup)
+                else:
+                    await msg.edit_text(text_to_send, reply_markup=reply_markup)
             except Exception:
-                await target_message_obj.answer(text_to_send,
-                                                reply_markup=reply_markup)
-        await event.answer()
+                await target_message_obj.answer(text_to_send, reply_markup=reply_markup)
+        try:
+            await event.answer()
+        except Exception:
+            pass
     else:
-        await target_message_obj.answer(text_to_send,
-                                        reply_markup=reply_markup)
+        await target_message_obj.answer(text_to_send, reply_markup=reply_markup)
 
 
 @router.callback_query(F.data.startswith("set_lang_"))
@@ -686,19 +810,6 @@ async def select_language_callback_handler(
                          is_edit=True)
     
     
-@router.callback_query(F.data == "main_action:about_us")
-async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
-    _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
-    
-    about_us_text = _(key="about_us_text")  # Текст "О нас" из локализаций
-
-    # Отправляем текст "О нас" и кнопку "Назад"
-    await query.message.edit_text(
-        about_us_text,
-        reply_markup=InlineKeyboardMarkup().add(
-            InlineKeyboardButton(text=_(key="back_to_main_menu_button"), callback_data="main_action:back_to_main")
-        )
-    )
 
 
 @router.callback_query(F.data == "main_action:back_to_main")
@@ -708,14 +819,23 @@ async def back_to_main_handler(callback: types.CallbackQuery, i18n_data: dict, s
     i18n: JsonI18n = i18n_data.get("i18n_instance")
     _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
 
-    # Здесь создаем клавиатуру для основного меню
+    # Создаем клавиатуру для основного меню
     reply_markup = get_main_menu_inline_keyboard(current_lang, i18n, settings)
-
-    # Отправка основного меню
-    await callback.message.edit_text(_("main_menu_greeting", user_name=callback.from_user.full_name), reply_markup=reply_markup)
-
+    # Текст приветствия
+    greeting_text = _(key="main_menu_greeting", user_name=callback.from_user.full_name)
     try:
-        await callback.answer()  # Ответ на запрос
+        msg = callback.message
+        # Если текущее сообщение содержит фото, редактируем подпись, иначе текст
+        if getattr(msg, "photo", None):
+            await msg.edit_caption(greeting_text, reply_markup=reply_markup)
+        else:
+            await msg.edit_text(greeting_text, reply_markup=reply_markup)
+    except Exception:
+        # Фоллбек: отправить новый текст
+        await callback.message.answer(greeting_text, reply_markup=reply_markup)
+    # Ответ на запрос
+    try:
+        await callback.answer()
     except Exception:
         pass
 

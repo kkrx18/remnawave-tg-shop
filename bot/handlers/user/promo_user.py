@@ -46,19 +46,27 @@ async def prompt_promo_code_input(callback: types.CallbackQuery,
                               show_alert=True)
         return
 
+    # Prepare prompt text and markup
+    prompt_text = _(key="promo_code_prompt")
+    markup = get_back_to_main_menu_markup(current_lang, i18n)
     try:
-        await callback.message.edit_text(
-            text=_(key="promo_code_prompt"),
-            reply_markup=get_back_to_main_menu_markup(current_lang, i18n))
+        msg = callback.message
+        # If the current message has a photo, edit caption; otherwise edit text
+        if getattr(msg, "photo", None):
+            await msg.edit_caption(prompt_text, reply_markup=markup)
+        else:
+            await msg.edit_text(prompt_text, reply_markup=markup)
     except Exception as e_edit:
         logging.warning(
             f"Failed to edit message for promo prompt: {e_edit}. Sending new one."
         )
-        await callback.message.answer(
-            text=_(key="promo_code_prompt"),
-            reply_markup=get_back_to_main_menu_markup(current_lang, i18n))
+        await callback.message.answer(prompt_text, reply_markup=markup)
 
-    await callback.answer()
+    # Always answer the callback
+    try:
+        await callback.answer()
+    except Exception:
+        pass
     await state.set_state(UserPromoStates.waiting_for_promo_code)
     logging.info(
         f"User {callback.from_user.id} entered state UserPromoStates.waiting_for_promo_code. "
