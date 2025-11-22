@@ -106,42 +106,22 @@ async def referral_command_handler(event: Union[types.Message,
     reply_markup_val = get_referral_link_keyboard(current_lang, i18n)
 
     if isinstance(event, types.Message):
-        # Normal message: send a new message
-        await event.answer(
-            text,
-            reply_markup=reply_markup_val,
-            disable_web_page_preview=True,
-        )
+        await event.answer(text,
+                           reply_markup=reply_markup_val,
+                           disable_web_page_preview=True)
     elif isinstance(event, types.CallbackQuery) and event.message:
-        # Callback: attempt to update caption if message has a photo
         try:
-            msg = event.message
-            if getattr(msg, "photo", None):
-                await msg.edit_caption(
-                    text,
-                    reply_markup=reply_markup_val,
-                    disable_web_page_preview=True,
-                )
-            else:
-                await msg.edit_text(
-                    text,
-                    reply_markup=reply_markup_val,
-                    disable_web_page_preview=True,
-                )
+            await event.message.edit_text(text,
+                                          reply_markup=reply_markup_val,
+                                          disable_web_page_preview=True)
         except Exception as e_edit:
             logging.warning(
                 f"Failed to edit message for referral info: {e_edit}. Sending new one."
             )
-            await event.message.answer(
-                text,
-                reply_markup=reply_markup_val,
-                disable_web_page_preview=True,
-            )
-        # Always answer the callback to stop the loading spinner
-        try:
-            await event.answer()
-        except Exception:
-            pass
+            await event.message.answer(text,
+                                       reply_markup=reply_markup_val,
+                                       disable_web_page_preview=True)
+        await event.answer()
 
 
 @router.callback_query(F.data.startswith("referral_action:"))
