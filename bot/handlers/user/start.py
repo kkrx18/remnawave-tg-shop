@@ -700,6 +700,47 @@ async def about_us_handler(query: CallbackQuery, i18n_instance, lang: str):
         )
     )
 
+@router.callback_query(F.data == "main_action:instructions")
+async def instructions_callback_handler(
+    callback: types.CallbackQuery,
+    i18n_data: dict,
+    settings: Settings,
+):
+    current_lang = i18n_data.get("current_language", settings.DEFAULT_LANGUAGE)
+    i18n: JsonI18n = i18n_data.get("i18n_instance")
+    _ = lambda key, **kwargs: i18n.gettext(current_lang, key, **kwargs)
+
+    # Текст с ссылками на Telegraph из i18n
+    text = _(
+        "instructions_text",
+        default=(
+            "📚 <b>Инструкция по подключению KaiVPN</b>\n\n"
+            "📱 iOS / Android — <a href=\"https://telegra.ph/...\">открыть</a>\n"
+            "💻 Windows — <a href=\"https://telegra.ph/...\">открыть</a>\n"
+            "🖥 macOS — <a href=\"https://telegra.ph/...\">открыть</a>\n"
+        )
+    )
+
+    # Кнопка «Назад в главное меню»
+    back_button = InlineKeyboardButton(
+        text=_("back_to_main_menu_button"),
+        callback_data="main_action:back_to_main",
+    )
+    back_markup = InlineKeyboardMarkup(inline_keyboard=[[back_button]])
+
+    # Меняем текст текущего сообщения (как в твоём about_us)
+    await callback.message.edit_text(
+        text,
+        reply_markup=back_markup,
+        parse_mode="HTML",
+        disable_web_page_preview=False,  # можно True, если не хочешь превью
+    )
+
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
 
 @router.callback_query(F.data == "main_action:back_to_main")
 async def back_to_main_handler(callback: types.CallbackQuery, i18n_data: dict, settings: Settings):
