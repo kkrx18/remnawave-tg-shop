@@ -5,7 +5,7 @@
   "channel_subscription_verify_button": "Check subscription",
   "channel_subscription_check_failed": "Couldn't verify the subscription. Please try again later or contact support.",
   "channel_subscription_verified_success": "✅ Subscription confirmed! You're good to go.",
-  "main_menu_greeting": "Main menu\n\n{user_name}, select an action:",
+  "main_menu_greeting": "Main menu🏠\n{user_name}, select an action:",
   "menu_activate_trial_button": "🆓 Free Trial",
   "menu_subscribe_inline": "💰 Purchase",
   "menu_my_subscription_inline": "🔐 My Subscription",
