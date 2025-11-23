@@ -81,106 +81,96 @@ def get_main_menu_inline_keyboard(
         i18n_instance: JsonI18n,
         settings: Settings,
         show_trial_button: bool = False) -> InlineKeyboardMarkup:
-    """
-    Главное меню KaiVPN.
-
-    Ряд 1: 🆓 Пробный период | 💰 Купить
-    Ряд 2: 🔐 Моя подписка | 🎁 Промокод
-    Ряд 3: 🎀 Рефералы      | 🌍 Язык
-    Ряд 4: ❤️ Отзывы        | 💬 Поддержка
-    Ряд 5: 📄 Условия       | 📰 О нас
-    """
     _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
     builder = InlineKeyboardBuilder()
 
-    # --- Ряд 1: Пробный период + Купить ---
-    row1_buttons = []
-
+    # Ряд 1: Пробный | Купить
+    row1 = []
     if show_trial_button and settings.TRIAL_ENABLED:
-        row1_buttons.append(
+        row1.append(
             InlineKeyboardButton(
-                text=_(key="menu_activate_trial_button"),  # 🆓 Пробный период
+                text=_(key="menu_activate_trial_button"),
                 callback_data="main_action:request_trial",
             )
         )
-
-    row1_buttons.append(
+    row1.append(
         InlineKeyboardButton(
-            text=_(key="menu_subscribe_inline"),  # 💰 Купить
+            text=_(key="menu_subscribe_inline"),
             callback_data="main_action:subscribe",
         )
     )
+    builder.row(*row1)
 
-    builder.row(*row1_buttons)
-
-    # --- Ряд 2: Моя подписка + Промокод ---
+    # Ряд 2: Моя подписка
     builder.row(
         InlineKeyboardButton(
-            text=_(key="menu_my_subscription_inline"),  # 🔐 Моя подписка
+            text=_(key="menu_my_subscription_inline"),
             callback_data="main_action:my_subscription",
-        ),
-        InlineKeyboardButton(
-            text=_(key="menu_apply_promo_button"),  # 🎁 Промокод
-            callback_data="main_action:apply_promo",
-        ),
-    )
-
-    # --- Ряд 3: Рефералы + Язык ---
-    builder.row(
-        InlineKeyboardButton(
-            text=_(key="menu_referral_inline"),  # 🎀 Рефералы
-            callback_data="main_action:referral",
-        ),
-        InlineKeyboardButton(
-            text=_(key="menu_language_settings_inline"),  # 🌍 Язык
-            callback_data="main_action:language",
-        ),
-    )
-
-    # --- Ряд 4: Отзывы + Поддержка ---
-    row4_buttons = []
-
-    # ❤️ Отзывы — делаем callback, чтобы внутри бота открыть раздел с отзывами
-    row4_buttons.append(
-        InlineKeyboardButton(
-            text=_(key="menu_reviews_button"),  # добавь этот ключ в locales
-            callback_data="main_action:reviews",
         )
     )
 
-    # 💬 Поддержка — если есть ссылка
+    # Ряд 3: Язык | Рефералы
+    builder.row(
+        InlineKeyboardButton(
+            text=_(key="menu_language_settings_inline"),
+            callback_data="main_action:language",
+        ),
+        InlineKeyboardButton(
+            text=_(key="menu_referral_inline"),
+            callback_data="main_action:referral",
+        ),
+    )
+
+    # Ряд 4: Поддержка | Статус (status = SERVER_STATUS_URL, не трогаем логику)
+    row4 = []
     if settings.SUPPORT_LINK:
-        row4_buttons.append(
+        row4.append(
             InlineKeyboardButton(
                 text=_(key="menu_support_button"),
                 url=settings.SUPPORT_LINK,
             )
         )
-
-    builder.row(*row4_buttons)
-
-    # --- Ряд 5: Условия сервиса + О нас ---
-    row5_buttons = []
-
-    if settings.TERMS_OF_SERVICE_URL:
-        row5_buttons.append(
+    if settings.SERVER_STATUS_URL:
+        row4.append(
             InlineKeyboardButton(
-                text=_(key="menu_terms_button"),  # 📄 Условия сервиса
+                text=_(key="menu_server_status_button"),
+                url=settings.SERVER_STATUS_URL,
+            )
+        )
+    if row4:
+        builder.row(*row4)
+
+    # Ряд 5: Инструкция | Промокод
+    builder.row(
+        InlineKeyboardButton(
+            text=_(key="instructions_button"),
+            callback_data="main_action:instructions",
+        ),
+        InlineKeyboardButton(
+            text=_(key="menu_apply_promo_button"),
+            callback_data="main_action:apply_promo",
+        ),
+    )
+
+    # Ряд 6: Условия сервиса | О нас
+    row6 = []
+    if settings.TERMS_OF_SERVICE_URL:
+        row6.append(
+            InlineKeyboardButton(
+                text=_(key="menu_terms_button"),
                 url=settings.TERMS_OF_SERVICE_URL,
             )
         )
-
-    # 📰 О нас — callback, как у тебя уже реализовано
-    row5_buttons.append(
+    row6.append(
         InlineKeyboardButton(
             text=_(key="about_us"),
             callback_data="main_action:about_us",
         )
     )
-
-    builder.row(*row5_buttons)
+    builder.row(*row6)
 
     return builder.as_markup()
+
 
 
 
