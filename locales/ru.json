@@ -20,7 +20,7 @@
   "menu_support_button": "💬 Поддержка",
   "menu_terms_button": "📄 Условия сервиса",
   "instructions_button": "📚 Инструкция",
-  "instructions_text": "📚 <b>Инструкция по подключению KaiVPN</b>\n\nВыберите нужную платформу и откройте подробное руководство:\n\n📱 iOS / Android — <a href=\"https://telegra.ph/Instrukciya-KaiVPN-Android-11-22\">открыть инструкцию</a>\n💻 Windows — <a href=\"https://telegra.ph/kaiVPN-Windows-Guide-11-22\">открыть инструкцию</a>\n🖥 macOS — <a href=\"https://telegra.ph/kaiVPN-macOS-Guide-11-22\">открыть инструкцию</a>\n\nЕсли что-то не получается — нажмите кнопку «Поддержка» в главном меню.",
+  "instructions_text": "📚 <b>Инструкция по подключению KaiVPN</b>\n\nВыберите нужную платформу и откройте подробное руководство:\n\n📱 iOS — <a href=\"https://telegra.ph/Instrukciya-po-ustanovke-KaiVPN-IOS-11-23\">открыть инструкцию</a>\n🤖 Android — <a href=\"https://telegra.ph/Instrukciya-po-ustanovke-KaiVPN-Android-11-23\">открыть инструкцию</a>\n💻 Windows — <a href=\"https://telegra.ph/Instrukciya-po-ustanovke-KaiVPN-Windows-11-23\">открыть инструкцию</a>\n🖥 macOS — <a href=\"https://telegra.ph/Instrukciya-po-ustanovke-KaiVPN-MacOS-11-23\">открыть инструкцию</a>\n\nЕсли что-то не получается — нажмите кнопку «Поддержка» в главном меню.",
   "back_to_main_menu_button": "⬅️ Назад",
   "choose_language": "Выберите язык / Select language:",
   "language_set_alert": "Язык изменен!",
