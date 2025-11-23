@@ -54,7 +54,7 @@ def get_main_menu_inline_keyboard(
         builder.row(
             InlineKeyboardButton(text=_(key="menu_support_button"),
                                  url=settings.SUPPORT_LINK),
-            InlineKeyboardButton(text=_(key="instructions"),
+            InlineKeyboardButton(text=_(key="instructions_button"),
                                  callback_data="main_action:instructions")
         )
 
