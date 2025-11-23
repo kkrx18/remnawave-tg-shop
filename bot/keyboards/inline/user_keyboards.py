@@ -5,68 +5,183 @@ from typing import Dict, Optional, List, Tuple
 from config.settings import Settings
 
 
+# def get_main_menu_inline_keyboard(
+#         lang: str,
+#         i18n_instance,
+#         settings: Settings,
+#         show_trial_button: bool = False) -> InlineKeyboardMarkup:
+#     _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
+#     builder = InlineKeyboardBuilder()
+
+#     if show_trial_button and settings.TRIAL_ENABLED:
+#         builder.row(
+#             InlineKeyboardButton(text=_(key="menu_activate_trial_button"),
+#                                  callback_data="main_action:request_trial"))
+
+#     builder.row(
+#         InlineKeyboardButton(text=_(key="menu_subscribe_inline"),
+#                              callback_data="main_action:subscribe"))
+#     builder.row(
+#         InlineKeyboardButton(
+#             text=_(key="menu_my_subscription_inline"),
+#             callback_data="main_action:my_subscription",
+#         )
+#     )
+
+#     referral_button = InlineKeyboardButton(
+#         text=_(key="menu_referral_inline"),
+#         callback_data="main_action:referral")
+#     promo_button = InlineKeyboardButton(
+#         text=_(key="menu_apply_promo_button"),
+#         callback_data="main_action:apply_promo")
+#     builder.row(referral_button, promo_button)
+
+#     language_button = InlineKeyboardButton(
+#         text=_(key="menu_language_settings_inline"),
+#         callback_data="main_action:language")
+#     status_button_list = []
+#     if settings.SERVER_STATUS_URL:
+#         status_button_list.append(
+#             InlineKeyboardButton(text=_(key="menu_server_status_button"),
+#                                  url=settings.SERVER_STATUS_URL))
+
+#     if status_button_list:
+#         builder.row(language_button, *status_button_list)
+#     else:
+#         builder.row(language_button)
+
+#     if settings.SUPPORT_LINK:
+#         builder.row(
+#             InlineKeyboardButton(text=_(key="menu_support_button"),
+#                                  url=settings.SUPPORT_LINK),
+#             InlineKeyboardButton(text=_(key="instructions_button"),
+#                                  callback_data="main_action:instructions")
+#         )
+
+#     if settings.TERMS_OF_SERVICE_URL:
+#         builder.row(
+#             InlineKeyboardButton(text=_(key="menu_terms_button"),
+#                                  url=settings.TERMS_OF_SERVICE_URL),
+#             InlineKeyboardButton(text=_(key="about_us"),  # Текст кнопки "О нас"
+#                                  callback_data="main_action:about_us")
+#         )
+
+#     return builder.as_markup()
+
+
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from config.settings import Settings
+from bot.middlewares.i18n import JsonI18n
+
+
 def get_main_menu_inline_keyboard(
         lang: str,
-        i18n_instance,
+        i18n_instance: JsonI18n,
         settings: Settings,
         show_trial_button: bool = False) -> InlineKeyboardMarkup:
+    """
+    Главное меню KaiVPN.
+
+    Ряд 1: 🆓 Пробный период | 💰 Купить
+    Ряд 2: 🔐 Моя подписка | 🎁 Промокод
+    Ряд 3: 🎀 Рефералы      | 🌍 Язык
+    Ряд 4: ❤️ Отзывы        | 💬 Поддержка
+    Ряд 5: 📄 Условия       | 📰 О нас
+    """
     _ = lambda key, **kwargs: i18n_instance.gettext(lang, key, **kwargs)
     builder = InlineKeyboardBuilder()
 
-    if show_trial_button and settings.TRIAL_ENABLED:
-        builder.row(
-            InlineKeyboardButton(text=_(key="menu_activate_trial_button"),
-                                 callback_data="main_action:request_trial"))
+    # --- Ряд 1: Пробный период + Купить ---
+    row1_buttons = []
 
-    builder.row(
-        InlineKeyboardButton(text=_(key="menu_subscribe_inline"),
-                             callback_data="main_action:subscribe"))
-    builder.row(
+    if show_trial_button and settings.TRIAL_ENABLED:
+        row1_buttons.append(
+            InlineKeyboardButton(
+                text=_(key="menu_activate_trial_button"),  # 🆓 Пробный период
+                callback_data="main_action:request_trial",
+            )
+        )
+
+    row1_buttons.append(
         InlineKeyboardButton(
-            text=_(key="menu_my_subscription_inline"),
-            callback_data="main_action:my_subscription",
+            text=_(key="menu_subscribe_inline"),  # 💰 Купить
+            callback_data="main_action:subscribe",
         )
     )
 
-    referral_button = InlineKeyboardButton(
-        text=_(key="menu_referral_inline"),
-        callback_data="main_action:referral")
-    promo_button = InlineKeyboardButton(
-        text=_(key="menu_apply_promo_button"),
-        callback_data="main_action:apply_promo")
-    builder.row(referral_button, promo_button)
+    builder.row(*row1_buttons)
 
-    language_button = InlineKeyboardButton(
-        text=_(key="menu_language_settings_inline"),
-        callback_data="main_action:language")
-    status_button_list = []
-    if settings.SERVER_STATUS_URL:
-        status_button_list.append(
-            InlineKeyboardButton(text=_(key="menu_server_status_button"),
-                                 url=settings.SERVER_STATUS_URL))
+    # --- Ряд 2: Моя подписка + Промокод ---
+    builder.row(
+        InlineKeyboardButton(
+            text=_(key="menu_my_subscription_inline"),  # 🔐 Моя подписка
+            callback_data="main_action:my_subscription",
+        ),
+        InlineKeyboardButton(
+            text=_(key="menu_apply_promo_button"),  # 🎁 Промокод
+            callback_data="main_action:apply_promo",
+        ),
+    )
 
-    if status_button_list:
-        builder.row(language_button, *status_button_list)
-    else:
-        builder.row(language_button)
+    # --- Ряд 3: Рефералы + Язык ---
+    builder.row(
+        InlineKeyboardButton(
+            text=_(key="menu_referral_inline"),  # 🎀 Рефералы
+            callback_data="main_action:referral",
+        ),
+        InlineKeyboardButton(
+            text=_(key="menu_language_settings_inline"),  # 🌍 Язык
+            callback_data="main_action:language",
+        ),
+    )
 
-    if settings.SUPPORT_LINK:
-        builder.row(
-            InlineKeyboardButton(text=_(key="menu_support_button"),
-                                 url=settings.SUPPORT_LINK),
-            InlineKeyboardButton(text=_(key="instructions_button"),
-                                 callback_data="main_action:instructions")
+    # --- Ряд 4: Отзывы + Поддержка ---
+    row4_buttons = []
+
+    # ❤️ Отзывы — делаем callback, чтобы внутри бота открыть раздел с отзывами
+    row4_buttons.append(
+        InlineKeyboardButton(
+            text=_(key="menu_reviews_button"),  # добавь этот ключ в locales
+            callback_data="main_action:reviews",
         )
+    )
+
+    # 💬 Поддержка — если есть ссылка
+    if settings.SUPPORT_LINK:
+        row4_buttons.append(
+            InlineKeyboardButton(
+                text=_(key="menu_support_button"),
+                url=settings.SUPPORT_LINK,
+            )
+        )
+
+    builder.row(*row4_buttons)
+
+    # --- Ряд 5: Условия сервиса + О нас ---
+    row5_buttons = []
 
     if settings.TERMS_OF_SERVICE_URL:
-        builder.row(
-            InlineKeyboardButton(text=_(key="menu_terms_button"),
-                                 url=settings.TERMS_OF_SERVICE_URL),
-            InlineKeyboardButton(text=_(key="about_us"),  # Текст кнопки "О нас"
-                                 callback_data="main_action:about_us")
+        row5_buttons.append(
+            InlineKeyboardButton(
+                text=_(key="menu_terms_button"),  # 📄 Условия сервиса
+                url=settings.TERMS_OF_SERVICE_URL,
+            )
         )
 
+    # 📰 О нас — callback, как у тебя уже реализовано
+    row5_buttons.append(
+        InlineKeyboardButton(
+            text=_(key="about_us"),
+            callback_data="main_action:about_us",
+        )
+    )
+
+    builder.row(*row5_buttons)
+
     return builder.as_markup()
+
 
 
 
