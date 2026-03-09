@@ -63,7 +63,7 @@
   "free_kassa_order_info": "Order #{order_id} from {date}",
   "payment_invoice_sent_message": "Telegram has sent the invoice above. Complete the payment or pick another method below.",
   "payment_successful_error_details": "✅ Payment succeeded, but an error occurred displaying details. Your subscription is active. Contact support if anything is wrong.",
-  "payment_successful_full": "✅ Payment successful!\nYour {months}-month subscription is active until {end_date}.\n\n<b>Free</b> promo code for 3 days(in honor of the service's opening): FREEPROMO\n\nConnection key:\n<code>{config_link}</code>\n\nTo connect, open the link and follow the instructions 👇",
+  "payment_successful_full": "✅ Payment successful!\nYour {months}-month subscription is active until {end_date}.\n\nConnection key:\n<code>{config_link}</code>\n\nTo connect, open the link and follow the instructions 👇",
   "payment_successful_with_referral_bonus_full": "✅ Payment successful!\nYour {months}-month subscription (base end date: {base_end_date}) has been extended by {bonus_days} bonus days for referral from {inviter_name} and is now active until {final_end_date}.\n\nConnection key:\n<code>{config_link}</code>\n\nTo connect, open the link and follow the instructions 👇",
   "payment_failed": "❌ Payment failed or was cancelled. Please try again or contact support.",
   "config_link_not_available": "not available, contact support",
